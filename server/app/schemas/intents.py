@@ -53,3 +53,63 @@ class IntentListItem(BaseModel):
     amount: Decimal
     status: IntentStatus
     created_at: datetime
+
+
+class CreateIntentRequest(BaseModel):
+    creatorId: int
+    userId: int
+    amount: Decimal = Field(gt=0)
+    useTimes: int = Field(default=1, gt=0)
+    expiryDate: datetime | None = None
+    country: str | None = None
+    city: str | None = None
+    lockForWebsites: bool = False
+    onlyWebsites: list[str] = Field(default_factory=list)
+    requiredProve: bool = False
+    description: str | None = None
+    category: str | None = None
+
+
+class CreateIntentResponse(BaseModel):
+    intentId: int
+    cardId: int
+    stripeCardId: str
+    cardNumber: str
+    last4: str
+    fee: Decimal
+    status: str
+
+
+class AppHomeSliderCard(BaseModel):
+    id: int
+    cardNumber: str
+    last4: str
+    cardholderName: str
+    expMonth: int
+    expYear: int
+    description: str
+    status: str
+
+
+class AppHomeData(BaseModel):
+    freeMoney: float
+    lockMoney: float
+    selfCardsCount: int
+    cardsReceivedCount: int
+    cardsSentCount: int
+    sliderCards: list[AppHomeSliderCard]
+    activityCount: int
+
+
+class SimulateTapToPayRequest(BaseModel):
+    cardNumber: str = Field(min_length=12, max_length=19)
+    amount: Decimal = Field(gt=0)
+    merchantName: str = Field(min_length=2)
+    mcc: str = Field(min_length=2)
+    city: str = Field(min_length=2)
+    country: str = Field(min_length=2)
+
+
+class SimulateTapToPayResponse(BaseModel):
+    approved: bool
+    reason: str

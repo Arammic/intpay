@@ -51,7 +51,13 @@ class MockStripeProvider(PaymentProvider):
         state = self._load()
         return state["cards"].get(card_id, {})
 
-    async def simulate_transaction(self, card_id: str, amount: float, merchant_category: str) -> dict[str, Any]:
+    async def simulate_transaction(
+        self,
+        card_id: str,
+        amount: float,
+        merchant_category: str,
+        merchant_name: str | None = None,
+    ) -> dict[str, Any]:
         event = {
             "id": f"evt_{secrets.token_hex(8)}",
             "type": "issuing_authorization.request",
@@ -61,7 +67,7 @@ class MockStripeProvider(PaymentProvider):
                     "amount": int(round(amount * 100)),
                     "card": {"id": card_id},
                     "merchant_data": {
-                        "name": "Mock Merchant",
+                        "name": merchant_name or "Unknown Merchant",
                         "category": merchant_category,
                     },
                 }
