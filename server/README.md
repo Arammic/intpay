@@ -1,326 +1,392 @@
-# IntPay Backend
+# IntPay Backend API
 
-## Project Overview
-
-IntPay Backend is a **Fintech intent-based payment system** built around programmable spending controls.
-Each payment intent defines who can spend, how much can be spent, where/when it can be spent, and (optionally) which MCC categories are allowed.  
-The backend provisions virtual cards, simulates transaction authorization, and records every authorization decision in audit logs.
+Production-grade backend for intent-based payments, virtual card controls, and auditable authorization decisions.  
+This README is the contract and onboarding guide for backend and frontend developers integrating with IntPay.
 
 ## Tech Stack
 
-- **Language/Runtime:** Python 3.11+
-- **API Framework:** FastAPI
-- **Validation/Settings:** Pydantic, pydantic-settings
-- **Database:** PostgreSQL (via Supabase)
-- **Payments:** Stripe Issuing (with mock mode support)
-- **AI Parsing (legacy flow):** Groq API
-- **ASGI Server:** Uvicorn
-- **Testing:** pytest, pytest-asyncio
+| Layer | Technology |
+|---|---|
+| API Framework | FastAPI |
+| Validation & Serialization | Pydantic |
+| Data Access | Supabase AsyncClient repository pattern |
+| Database | PostgreSQL (via Supabase) |
+| Payments | Stripe Issuing (plus mock provider mode) |
+| Runtime | Python 3.13+ |
+| ASGI Server | Uvicorn |
 
 ## Getting Started
 
-### Prerequisites
+### 1) Prerequisites
 
+- Python `3.13+`
+- `pip`
 - Git
-- Python 3.11+ and `pip`
-- Supabase project (URL + service role key)
-- Stripe credentials (or mock mode)
-- Environment variables configured in `.env`
+- Supabase project credentials
+- Stripe credentials (or mock mode enabled)
 
-### Installation
+### 2) Clone and enter the server directory
 
 ```bash
 git clone <your-repo-url>
 cd IntPayApp/server
-python -m venv .venv
-# Windows PowerShell
-.venv\Scripts\Activate.ps1
-# macOS/Linux
-# source .venv/bin/activate
+```
+
+### 3) Create a virtual environment
+
+```bash
+python -m venv venv
+```
+
+### 4) Activate the virtual environment
+
+Windows (PowerShell):
+
+```powershell
+venv\Scripts\Activate.ps1
+```
+
+macOS/Linux:
+
+```bash
+source venv/bin/activate
+```
+
+### 5) Install dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-### Database Setup
+### 6) Configure environment variables
 
-Run the base schema script first:
-
-- `supabase/migrations/001_init_intpay.sql`
-
-Then run the follow-up migration for atomic RPC/category parity:
-
-- `supabase/migrations/002_intent_category_and_atomic_create.sql`
-
-> The schema uses **Integer (`serial`) IDs** for all primary/foreign keys in the flattened intent-centric flow.
-
-### Run the Server
-
-Development:
+Create `.env` from `.env.example` and set real values:
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+cp .env.example .env
 ```
 
-Production (example):
-
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-Base API prefix from config: `"/api/v1"`.
-
----
-
-## API Documentation
-
-### Endpoint Index
-
-| Method | Path | Description | Required Headers |
-|---|---|---|---|
-| `GET` | `/api/v1/home/summary/{userId}` | Dashboard summary: balances, counts, slider cards, activity | `Accept: application/json` |
-| `POST` | `/api/v1/intents/create` | Create intent + virtual card with atomic fund reservation and fee | `Content-Type: application/json` |
-| `POST` | `/api/v1/simulate/tap-to-pay` | Simulate tap-to-pay authorization with category/MCC and policy rules | `Content-Type: application/json` |
-| `POST` | `/api/v1/vault/add-funds` | Add funds to `profiles.vault_balance` | `Content-Type: application/json` |
-
----
-
-### 1) GET `/api/v1/home/summary/{userId}`
-
-Returns homepage dashboard data for a user.
-
-#### Path Params
-
-- `userId` (integer): Profile ID (`profiles.id`)
-
-#### Sample Response
-
-```json
-{
-  "freeMoney": 1200.5,
-  "lockMoney": 300.0,
-  "selfCardsCount": 2,
-  "cardsReceivedCount": 1,
-  "cardsSentCount": 4,
-  "sliderCards": [
-    {
-      "id": 10,
-      "cardNumber": "4895123412349876",
-      "last4": "9876",
-      "cardholderName": "User 7",
-      "expMonth": 11,
-      "expYear": 2033,
-      "description": "Monthly grocery budget",
-      "status": "active"
-    }
-  ],
-  "activityCount": 12
-}
-```
-
----
-
-### 2) POST `/api/v1/intents/create`
-
-Creates an intent and its linked virtual card using an atomic DB RPC transaction.
-
-#### Sample Request
-
-```json
-{
-  "creatorId": 3,
-  "userId": 7,
-  "amount": 150.0,
-  "useTimes": 3,
-  "expiryDate": "2026-12-31T23:59:59Z",
-  "country": "SA",
-  "city": "Riyadh",
-  "lockForWebsites": false,
-  "onlyWebsites": ["amazon.com", "noon.com"],
-  "requiredProve": false,
-  "description": "Office supplies budget",
-  "category": "tech"
-}
-```
-
-#### Sample Response
-
-```json
-{
-  "intentId": 21,
-  "cardId": 14,
-  "stripeCardId": "ic_9ab8c7d6e5f41234abcd",
-  "cardNumber": "4287123412341234",
-  "last4": "1234",
-  "fee": 0.05,
-  "status": "active"
-}
-```
-
----
-
-### 3) POST `/api/v1/simulate/tap-to-pay`
-
-Runs the transaction validation pipeline and writes `audit_logs` for both approved and declined outcomes.
-
-#### Sample Request
-
-```json
-{
-  "cardNumber": "4287123412341234",
-  "amount": 35.5,
-  "merchantName": "bestbuy.com",
-  "mcc": "5732",
-  "city": "Online",
-  "country": "SA"
-}
-```
-
-#### Sample Response (Approved)
-
-```json
-{
-  "approved": true,
-  "reason": "approved"
-}
-```
-
-#### Sample Response (Declined)
-
-```json
-{
-  "approved": false,
-  "reason": "MCC [5812] not allowed for category [tech]"
-}
-```
-
----
-
-## Environment Variables Template
-
-Use this `.env` template as a starting point:
+Required keys (from `.env.example`):
 
 ```env
 APP_NAME=IntPay API
 APP_ENV=development
 APP_DEBUG=true
 API_V1_PREFIX=/api/v1
-
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-
 STRIPE_API_KEY=sk_test_xxx
 STRIPE_WEBHOOK_SECRET=whsec_xxx
 STRIPE_ISSUING_CARDHOLDER_ID=ich_xxx
 USE_MOCK_STRIPE=true
 MOCK_STRIPE_STORE_PATH=.mock/mock_stripe_cards.json
-
 GROQ_API_KEY=gsk_xxx
 GROQ_MODEL=llama-3.3-70b-versatile
-
-# Documentation-level operational value (currently hardcoded in service logic)
-CREATE_CARD_FEE=0.05
 ```
 
-> Note: The backend currently reads the Supabase/Stripe/Groq keys above.  
-> `CREATE_CARD_FEE` is documented for operations alignment, while the service uses a fixed `0.05` value in code.
+### 7) Run database migrations
 
----
+Apply migrations in order:
 
-## Architecture & Business Logic
+1. `supabase/migrations/001_init_intpay.sql`
+2. `supabase/migrations/002_intent_category_and_atomic_create.sql`
 
-### Category-to-MCC Mapping
+### 8) Run the API server
 
-When `intents.category` is set, the transaction `mcc` must belong to the mapped list:
-
-- `food` -> `5812, 5814, 5411, 5499`
-- `travel` -> `4112, 4511, 4722, 7512, 7011`
-- `tech` -> `5732, 5734, 4816, 7372`
-- `entertainment` -> `7832, 7922, 7997`
-
-If no match is found, the transaction is declined and logged with a reason:
-`MCC [code] not allowed for category [category]`.
-
-### Fee and Balance Reservation Logic
-
-On `POST /api/v1/intents/create`:
-
-1. Validate `vault_balance >= amount + 0.05`.
-2. Deduct `(amount + 0.05)` from `profiles.vault_balance`.
-3. Add `amount` to `profiles.lock_money`.
-4. Create intent + card in one atomic DB transaction.
-
-This ensures reserved money cannot be spent twice and card creation is all-or-nothing.
-
----
-
-## Mermaid Diagrams
-
-### ER Diagram
-
-```mermaid
-erDiagram
-    profiles ||--o{ intents : creates
-    profiles ||--o{ intents : receives
-    intents ||--|| virtual_cards : has
-    virtual_cards ||--o{ audit_logs : logs
-
-    profiles {
-        int id PK
-        numeric vault_balance
-        numeric lock_money
-    }
-    intents {
-        int id PK
-        int creator_id FK
-        int receiver_id FK
-        numeric amount
-        numeric remaining_amount
-        int use_times
-        int uses_left
-        text category
-        text city
-        text country
-        boolean lock_for_websites
-        jsonb only_websites
-        text status
-    }
-    virtual_cards {
-        int id PK
-        int intent_id FK
-        text card_number
-        text stripe_card_id
-    }
-    audit_logs {
-        int id PK
-        int card_id FK
-        numeric transaction_amount
-        text merchant_name
-        text mcc
-        text city
-        text reason
-        text decision
-    }
+```bash
+python -m uvicorn app.main:app --reload --port 5000
 ```
 
-### Transaction Validation Pipeline
+Base API prefix is configured by `API_V1_PREFIX` (default: `/api/v1`).
+
+## API Contract: Unified Response Wrapper
+
+All API responses (success and error) follow this structure:
+
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully",
+  "data": {},
+  "error": null,
+  "meta": {
+    "timestamp": "2026-04-28T19:30:00+00:00",
+    "version": "v1"
+  }
+}
+```
+
+Error example:
+
+```json
+{
+  "success": false,
+  "message": "Profile not found",
+  "data": null,
+  "error": {
+    "code": "http_404",
+    "details": null
+  },
+  "meta": {
+    "timestamp": "2026-04-28T19:30:00+00:00",
+    "version": "v1"
+  }
+}
+```
+
+## API Reference (Core Endpoints)
+
+| Domain | Method | Endpoint | Description |
+|---|---|---|---|
+| Profiles | `GET` | `/api/v1/profiles/{id}` | Fetch a profile by integer ID |
+| Intents | `GET` | `/api/v1/intents/{id}` | Fetch an intent by ID with derived `mccList` |
+| Vault | `POST` | `/api/v1/vault/add-funds` | Add funds to profile vault balance |
+| Audit Logs | `GET` | `/api/v1/logs/{id}` | Fetch a single audit-log record by ID (history item) |
+
+## Endpoint Examples
+
+### Profiles: Get by ID
+
+`GET /api/v1/profiles/{id}`
+
+Success response:
+
+```json
+{
+  "success": true,
+  "message": "Profile retrieved successfully",
+  "data": {
+    "id": 3,
+    "name": "Alice Smith",
+    "username": "alice",
+    "email": "alice@example.com",
+    "vaultBalance": 1500.75,
+    "lockMoney": 120.25,
+    "stripeCustomerId": "cus_abc123",
+    "createdAt": "2026-04-15T10:00:00+00:00"
+  },
+  "error": null,
+  "meta": {
+    "timestamp": "2026-04-28T19:30:00+00:00",
+    "version": "v1"
+  }
+}
+```
+
+Not found response:
+
+```json
+{
+  "success": false,
+  "message": "Profile not found",
+  "data": null,
+  "error": {
+    "code": "http_404",
+    "details": null
+  },
+  "meta": {
+    "timestamp": "2026-04-28T19:30:00+00:00",
+    "version": "v1"
+  }
+}
+```
+
+### Intents: Get by ID
+
+`GET /api/v1/intents/{id}`
+
+Success response:
+
+```json
+{
+  "success": true,
+  "message": "Intent retrieved successfully",
+  "data": {
+    "id": 21,
+    "creatorId": 3,
+    "receiverId": 7,
+    "amount": 150.0,
+    "remainingAmount": 120.0,
+    "useTimes": 3,
+    "usesLeft": 2,
+    "category": "tech",
+    "mccList": [4816, 5732, 5734, 7372],
+    "expiryAt": "2026-12-31T23:59:59+00:00",
+    "country": "SA",
+    "city": "Riyadh",
+    "lockForWebsites": false,
+    "onlyWebsites": ["amazon.com", "noon.com"],
+    "requiredProve": false,
+    "description": "Office supplies budget",
+    "status": "active",
+    "createdAt": "2026-04-20T11:30:00+00:00"
+  },
+  "error": null,
+  "meta": {
+    "timestamp": "2026-04-28T19:30:00+00:00",
+    "version": "v1"
+  }
+}
+```
+
+### Vault: Add Funds
+
+`POST /api/v1/vault/add-funds`
+
+Request payload:
+
+```json
+{
+  "profile_id": 3,
+  "amount": 250.0
+}
+```
+
+Success response:
+
+```json
+{
+  "success": true,
+  "message": "Funds added successfully",
+  "data": {
+    "profile_id": 3,
+    "vault_balance": 1750.75
+  },
+  "error": null,
+  "meta": {
+    "timestamp": "2026-04-28T19:30:00+00:00",
+    "version": "v1"
+  }
+}
+```
+
+Validation error response (negative amount):
+
+```json
+{
+  "success": false,
+  "message": "Amount must be greater than zero",
+  "data": null,
+  "error": {
+    "code": "http_422",
+    "details": [
+      {
+        "field": "body.amount",
+        "message": "Amount must be greater than zero",
+        "type": "value_error"
+      }
+    ]
+  },
+  "meta": {
+    "timestamp": "2026-04-28T19:30:00+00:00",
+    "version": "v1"
+  }
+}
+```
+
+### Audit Logs: History Record by ID
+
+`GET /api/v1/logs/{id}`
+
+Success response:
+
+```json
+{
+  "success": true,
+  "message": "Audit log retrieved successfully",
+  "data": {
+    "id": 44,
+    "cardId": 14,
+    "transactionAmount": 35.5,
+    "merchantName": "bestbuy.com",
+    "mcc": "5732",
+    "city": "Online",
+    "country": "SA",
+    "decision": "approved",
+    "reason": null,
+    "createdAt": "2026-04-28T16:22:00+00:00"
+  },
+  "error": null,
+  "meta": {
+    "timestamp": "2026-04-28T19:30:00+00:00",
+    "version": "v1"
+  }
+}
+```
+
+## Technical Architecture
+
+### Repository-Centric Backend Design
+
+IntPay uses a layered architecture:
+
+- FastAPI routers expose API endpoints.
+- Services orchestrate payment and rule logic.
+- Repositories communicate with Supabase/PostgreSQL.
+- Global exception handlers normalize all error responses.
 
 ```mermaid
 flowchart TD
-    tapRequest[TapRequest] --> resolveCard[ResolveCardAndIntent]
-    resolveCard --> detectOnline[DetectOnlineByCityMerchantMcc]
-    detectOnline --> checkAmount[CheckRemainingAmount]
-    checkAmount --> checkUses[CheckUsesLeft]
-    checkUses --> checkCategory[CheckCategoryMccMapping]
-    checkCategory --> checkWebsite[CheckWebsitePolicies]
-    checkWebsite --> checkGeo[CheckCityCountryPolicies]
-    checkGeo --> writeAudit[WriteAuditLog]
-    writeAudit --> approvedPath[IfApprovedSettleCountersAndLockMoney]
-    writeAudit --> declinedPath[IfDeclinedReturnReason]
+frontend[FrontendClient] --> api[FastAPI_Routers]
+api --> services[DomainServices]
+services --> repos[SupabaseRepositories]
+repos --> db[PostgreSQL_via_Supabase]
+api --> wrapper[UnifiedResponseWrapper]
+wrapper --> frontendParser[FrontendSingleParser]
 ```
 
----
+### Project Structure Overview
 
-## Notes for Developers
+```mermaid
+flowchart TD
+serverRoot[server] --> appDir[app]
+serverRoot --> migrationsDir[supabase_migrations]
+appDir --> apiDir[api_v1]
+appDir --> coreDir[core]
+appDir --> repoDir[repositories]
+appDir --> schemasDir[schemas]
+appDir --> servicesDir[services]
+appDir --> utilsDir[utils]
+apiDir --> profilesEndpoint[profiles_py]
+apiDir --> intentsEndpoint[intents_py]
+apiDir --> vaultEndpoint[vault_py]
+apiDir --> logsEndpoint[logs_py]
+```
 
-- IDs in the active flow are integer-based; avoid introducing UUIDs in new intent/card/simulation paths.
-- The old `smart_rules`-based endpoints still exist in code for legacy compatibility; the current source of truth for runtime validation is the flattened `intents` constraints.
-- Keep request/response field names stable because frontend contracts are camelCase for core endpoints.
+### Validation Logic
+
+- `POST /api/v1/vault/add-funds` enforces:
+  - `profile_id` must be a positive integer.
+  - `amount` must be greater than zero.
+- Intent creation and simulation enforce positive amount and constrained request types through Pydantic schemas.
+- Validation errors are transformed into the unified `http_422` error structure with field-level details.
+
+### Category and MCC Behavior
+
+For intents with a category, MCC authorization follows the service mapping:
+
+- `food`: `5812, 5814, 5411, 5499`
+- `travel`: `4112, 4511, 4722, 7512, 7011`
+- `tech`: `5732, 5734, 4816, 7372`
+- `entertainment`: `7832, 7922, 7997`
+
+If the MCC does not match the allowed set, authorization is declined and logged with a reason.
+
+### Unified Response Internals
+
+- Success responses are created through `send_response(...)`.
+- Errors are wrapped globally in `register_exception_handlers(...)` for:
+  - application errors (`AppError` hierarchy),
+  - request validation errors (`RequestValidationError`),
+  - HTTP errors and unhandled server exceptions.
+
+## Interactive API Documentation
+
+- Swagger UI: [http://127.0.0.1:5000/docs](http://127.0.0.1:5000/docs)
+- ReDoc: [http://127.0.0.1:5000/redoc](http://127.0.0.1:5000/redoc)
+
+## Developer Notes
+
+- Keep integer IDs for profile/intent/card/log flows.
+- Preserve request and response field names exactly to avoid frontend contract breaks.
+- Use the unified response envelope for any new endpoint to maintain a single frontend parsing strategy.
