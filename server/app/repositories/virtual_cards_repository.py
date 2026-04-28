@@ -13,6 +13,22 @@ class VirtualCardsRepository:
         result = await self.client.table("virtual_cards").insert(payload).execute()
         return result.data[0]
 
+    async def get_by_id(self, card_id: int) -> dict:
+        result = await self.client.table("virtual_cards").select("*").eq("id", int(card_id)).limit(1).execute()
+        if not result.data:
+            raise NotFoundError("Virtual card not found")
+        return result.data[0]
+
+    async def list_transactions_for_card(self, card_id: int) -> list[dict]:
+        result = (
+            await self.client.table("audit_logs")
+            .select("*")
+            .eq("card_id", int(card_id))
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return result.data or []
+
     async def get_by_stripe_card_id(self, stripe_card_id: str) -> dict:
         result = (
             await self.client.table("virtual_cards").select("*").eq("stripe_card_id", stripe_card_id).limit(1).execute()

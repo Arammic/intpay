@@ -80,6 +80,77 @@ class CreateIntentResponse(BaseModel):
     status: str
 
 
+class ProfileByIdResponse(BaseModel):
+    id: int
+    name: str
+    username: str
+    email: str
+    vaultBalance: Decimal
+    lockMoney: Decimal
+    stripeCustomerId: str | None = None
+    createdAt: datetime
+
+
+class IntentByIdResponse(BaseModel):
+    id: int
+    creatorId: int
+    receiverId: int
+    amount: Decimal
+    remainingAmount: Decimal
+    useTimes: int
+    usesLeft: int
+    category: str | None = None
+    mccList: list[int]
+    expiryAt: datetime | None = None
+    country: str | None = None
+    city: str | None = None
+    lockForWebsites: bool
+    onlyWebsites: list[str]
+    requiredProve: bool
+    description: str | None = None
+    status: str
+    createdAt: datetime
+
+
+class CardTransactionItem(BaseModel):
+    id: int
+    transactionAmount: Decimal
+    merchantName: str | None = None
+    mcc: str | None = None
+    city: str | None = None
+    country: str | None = None
+    decision: str
+    reason: str | None = None
+    createdAt: datetime
+
+
+class CardByIdResponse(BaseModel):
+    id: int
+    stripeCardId: str
+    intentId: int
+    cardNumber: str | None = None
+    last4: str | None = None
+    cardholderName: str | None = None
+    expMonth: int | None = None
+    expYear: int | None = None
+    status: str
+    createdAt: datetime
+    transactions: list[CardTransactionItem]
+
+
+class AuditLogByIdResponse(BaseModel):
+    id: int
+    cardId: int
+    transactionAmount: Decimal
+    merchantName: str | None = None
+    mcc: str | None = None
+    city: str | None = None
+    country: str | None = None
+    decision: str
+    reason: str | None = None
+    createdAt: datetime
+
+
 class AppHomeSliderCard(BaseModel):
     id: int
     cardNumber: str

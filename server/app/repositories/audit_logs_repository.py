@@ -2,6 +2,8 @@ from typing import Any
 
 from supabase import AsyncClient
 
+from app.core.exceptions import NotFoundError
+
 
 class AuditLogsRepository:
     def __init__(self, client: AsyncClient) -> None:
@@ -9,6 +11,12 @@ class AuditLogsRepository:
 
     async def create(self, payload: dict[str, Any]) -> dict:
         result = await self.client.table("audit_logs").insert(payload).execute()
+        return result.data[0]
+
+    async def get_by_id(self, log_id: int) -> dict:
+        result = await self.client.table("audit_logs").select("*").eq("id", int(log_id)).limit(1).execute()
+        if not result.data:
+            raise NotFoundError("Audit log not found")
         return result.data[0]
 
     async def count_for_user_cards(self, user_id: int) -> int:
