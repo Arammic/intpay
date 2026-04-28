@@ -1,9 +1,17 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware  # ✅ import this
 
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
+
+
+logging.basicConfig(
+    level=logging.DEBUG if settings.app_debug else logging.INFO,
+    format="[%(levelname)s] %(message)s",
+)
 
 
 def create_app() -> FastAPI:

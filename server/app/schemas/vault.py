@@ -1,14 +1,20 @@
 from decimal import Decimal
-from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class AddFundsRequest(BaseModel):
-    profile_id: UUID
-    amount: Decimal = Field(gt=0)
+    profile_id: int = Field(gt=0)
+    amount: Decimal = Field(gt=0, description="Amount must be greater than zero")
+
+    @field_validator("amount")
+    @classmethod
+    def validate_amount(cls, value: Decimal) -> Decimal:
+        if value <= 0:
+            raise ValueError("Amount must be greater than zero")
+        return value
 
 
 class AddFundsResponse(BaseModel):
-    profile_id: UUID
+    profile_id: int
     vault_balance: Decimal
