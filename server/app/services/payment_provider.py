@@ -12,5 +12,11 @@ class PaymentProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def simulate_transaction(self, card_id: str, amount: float, merchant_category: str) -> dict[str, Any]:
+    async def simulate_transaction(
+        self,
+        card_id: str,
+        amount: float,
+        merchant_category: str,
+        merchant_name: str | None = None,
+    ) -> dict[str, Any]:
         raise NotImplementedError
