@@ -31,23 +31,25 @@ app.UseHttpsRedirection();
 
 var apiV1 = app.MapGroup("api/v1");
 
-// GET: api/v1/profiles/{id}
 apiV1.MapGet("/profiles/{id:int}", async (int id, ProfileService profileService) =>
 {
     try
     {
-        var profile = await profileService.GetProfileWithRecalculatedLock(id);
-
-        // Return a clean object to avoid the PrimaryKeyAttribute serialization error
-        return Results.Ok(profile);
+        var result = await profileService.GetProfileFullResponse(id);
+        return Results.Json(new { success = true, data = result }, statusCode: 200);
+    }
+    catch (KeyNotFoundException knf)
+    {
+        return Results.Json(new { success = false, message = knf.Message }, statusCode: 404);
     }
     catch (Exception ex)
     {
-        // Handle "Profile not found" or connection issues
-        return Results.NotFound(new { message = ex.Message });
+        return Results.Problem(detail: ex.Message, statusCode: 400);
     }
 })
-.WithName("GetProfileById");
+.WithName("GetProfileFullResponse");
+
+
 apiV1.MapPost("/intents/create", async (CreateIntentRequest payload, IntPayService service) =>
 {
     try
