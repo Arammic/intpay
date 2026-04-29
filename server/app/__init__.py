@@ -1,1 +1,0 @@
-"""IntPay application package."""
