@@ -1,0 +1,35 @@
+## --- ملفات البناء (Build Outputs) ---
+bin/
+obj/
+[Debug]/
+[Release]/
+TestResults/
+
+## --- Visual Studio ملفات النظام الخاصة بـ ---
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+*.userprefs
+
+## --- (NuGet) مجلد الحزم ---
+# لا نحتاج لرفع الحزم لأنها تُحمل تلقائياً عند تشغيل المشروع
+packages/
+*.nuget.props
+*.nuget.targets
+
+## --- ملفات إعدادات المستخدم المحلية ---
+# (Secrets) ملفات الأسرار التي تحتوي على مفاتيح الربط المحلية
+appsettings.Development.json
+appsettings.Local.json
+
+## --- ملفات الأدوات والويب ---
+.tlog/
+.log
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+## --- Rider / JetBrains (اختياري) ---
+.idea/
