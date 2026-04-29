@@ -212,8 +212,6 @@ public async Task<List<object>> SearchProfilesByName(string name)
             name = p.Name,
             username = p.Username,
             email = p.Email,
-            vaultBalance = p.VaultBalance,
-            lockMoney = p.LockMoney,
             link = $"https://intentpay.app/u/{p.Id}"
         });
     }
