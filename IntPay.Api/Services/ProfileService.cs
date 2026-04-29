@@ -151,6 +151,52 @@ public class ProfileService
         var response = await _client.From<Profile>().Update(profile);
         return response.Model;
     }
+    public async Task<object> GetProfileFullResponse(int userId)
+{
+    // 1. Fetch profile
+    var profile = await _client.From<Profile>().Where(x => x.Id == userId).Single();
+    if (profile == null) throw new KeyNotFoundException("Profile not found");
+
+    // 2. Compute lockMoney
+    var lockMoney = await CalculateTotalActiveCommitments(userId);
+
+    // 3. Fetch contacts list
+    var contactsResp = await _client.From<Contact>()
+        .Where(x => x.UserId == userId)
+        .Get();
+
+    var contacts = new List<object>();
+    foreach (var c in contactsResp.Models ?? new List<Contact>())
+    {
+        var contactProfile = await _client.From<Profile>().Where(x => x.Id == c.ContactId).Single();
+        if (contactProfile != null)
+        {
+            contacts.Add(new {
+                id = contactProfile.Id,
+                name = contactProfile.Name,
+                email = contactProfile.Email,
+                username = contactProfile.Username,
+                link = $"https://intentpay.app/u/{contactProfile.Id}"
+            });
+        }
+    }
+
+    // 4. Static mock points (random 4–20)
+    var points = Random.Shared.Next(4, 21);
+
+    // 5. Build response
+    return new {
+        id = profile.Id,
+        name = profile.Name,
+        username = profile.Username,
+        email = profile.Email,
+        vaultBalance = profile.VaultBalance,
+        lockMoney = lockMoney,
+        link = $"https://intentpay.app/u/{profile.Id}",
+        contacts = contacts,
+        points = points
+    };
+}
 
     public async Task<Profile> DecrementLockMoney(int profileId, decimal amount)
     {
