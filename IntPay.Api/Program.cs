@@ -49,6 +49,29 @@ apiV1.MapGet("/profiles/{id:int}", async (int id, ProfileService profileService)
 })
 .WithName("GetProfileFullResponse");
 
+// GET: api/v1/profiles/search?name=Omar
+apiV1.MapGet("/profiles/search", async ([FromQuery] string name, ProfileService profileService) =>
+{
+    try
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return Results.Json(new { success = false, message = "Name query is required" }, statusCode: 400);
+
+        var results = await profileService.SearchProfilesByName(name);
+
+        return Results.Json(new {
+            success = true,
+            message = $"Found {results.Count} profiles matching '{name}'",
+            data = results,
+            meta = new { statusCode = 200, timestamp = DateTimeOffset.UtcNow.ToString("O") }
+        }, statusCode: 200);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(detail: ex.Message, statusCode: 400);
+    }
+})
+.WithName("SearchProfilesByName");
 
 apiV1.MapPost("/intents/create", async (CreateIntentRequest payload, IntPayService service) =>
 {
