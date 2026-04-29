@@ -9,6 +9,20 @@ using Supabase.Postgrest.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowedOrigins", policy =>
+    {
+        policy.WithOrigins(
+            "http://localhost:8081",
+            "https://int-pay.netlify.app"
+        )
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials();
+    });
+});
+
 // 1. Register Supabase Client
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
@@ -28,6 +42,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseCors("AllowedOrigins");
 
 var apiV1 = app.MapGroup("api/v1");
 
