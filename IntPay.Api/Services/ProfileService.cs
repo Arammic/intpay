@@ -197,6 +197,27 @@ public class ProfileService
         points = points
     };
 }
+public async Task<List<object>> SearchProfilesByName(string name)
+{
+    // Perform case-insensitive search using ILIKE
+    var resp = await _client.From<Profile>()
+        .Filter("name", Operator.ILike, $"%{name}%")
+        .Get();
+
+    var results = new List<object>();
+    foreach (var p in resp.Models ?? new List<Profile>())
+    {
+        results.Add(new {
+            id = p.Id,
+            name = p.Name,
+            username = p.Username,
+            email = p.Email,
+            link = $"https://intentpay.app/u/{p.Id}"
+        });
+    }
+
+    return results;
+}
 
     public async Task<Profile> DecrementLockMoney(int profileId, decimal amount)
     {
