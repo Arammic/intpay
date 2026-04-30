@@ -8,7 +8,7 @@
 
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](#getting-started) [![License](https://img.shields.io/badge/license-MIT-blue)](#license) [![Backend](https://img.shields.io/badge/.NET-10-512BD4)](#technical-blueprint) [![Frontend](https://img.shields.io/badge/React-19-61DAFB)](#technical-blueprint) [![Data](https://img.shields.io/badge/data-Supabase-3ECF8E)](#technical-blueprint) [![Payments](https://img.shields.io/badge/payments-mock_execution_layer-635BFF)](#mvp-status--implementation-reality)
 
-[Live Demo](https://example.com/intpay-demo) | [Team](https://example.com/intpay-team) | [API Reference](./API_REFERENCE.md)
+[Live Demo](https://int-pay.netlify.app/) | [Team](https://www.linkedin.com/company/arammic) | [API Reference](./API_REFERENCE.md)
 
 ---
 
