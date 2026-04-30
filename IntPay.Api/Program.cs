@@ -26,6 +26,10 @@ builder.Services.AddCors(options =>
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddSupabase(builder.Configuration);
+builder.Services.Configure<InvoiceVerificationOptions>(
+    builder.Configuration.GetSection(InvoiceVerificationOptions.SectionName));
+builder.Services.AddSingleton<IReverseGeocoder, PlaceholderReverseGeocoder>();
+builder.Services.AddHttpClient<InvoiceVerificationService>();
 builder.Services.AddScoped<ProfileService>();
 builder.Services.AddScoped<IntPayService>();
 builder.Services.ConfigureHttpJsonOptions(options => {
@@ -63,6 +67,45 @@ apiV1.MapGet("/profiles/{id:int}", async (int id, ProfileService profileService)
     }
 })
 .WithName("GetProfileFullResponse");
+
+// POST: api/v1/profiles/{userId}/add-funds  body: { "amount": 100.00 }
+apiV1.MapPost("/profiles/{userId:int}/add-funds", async (int userId, AddFundsRequest? body, ProfileService profileService) =>
+{
+    try
+    {
+        body = body ?? throw new ArgumentException("Request body is required.");
+        var updated = await profileService.AddFunds(userId, body.Amount);
+
+        return Results.Json(new
+        {
+            success = true,
+            message = "Funds added successfully",
+            data = new
+            {
+                id = updated.Id,
+                name = updated.Name,
+                username = updated.Username,
+                email = updated.Email,
+                vaultBalance = updated.VaultBalance,
+                lockMoney = updated.LockMoney
+            },
+            meta = new { statusCode = 200, version = "v1", timestamp = DateTimeOffset.UtcNow.ToString("O") }
+        }, statusCode: 200);
+    }
+    catch (KeyNotFoundException knf)
+    {
+        return Results.Json(new { success = false, message = knf.Message }, statusCode: 404);
+    }
+    catch (ArgumentException ax)
+    {
+        return Results.Json(new { success = false, message = ax.Message }, statusCode: 400);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(detail: ex.Message, statusCode: 400);
+    }
+})
+.WithName("AddFunds");
 
 // GET: api/v1/profiles/search?name=Omar
 apiV1.MapGet("/profiles/search", async ([FromQuery] string name, ProfileService profileService) =>
@@ -164,6 +207,41 @@ apiV1.MapPost("/simulate/tap-to-pay", async (TapToPayRequest payload, IntPayServ
 })
 .WithName("SimulateTapToPay");
 
+apiV1.MapPost("/verify-invoice", async (VerifyInvoiceRequest payload, IntPayService service, CancellationToken ct) =>
+{
+    try
+    {
+        payload = payload ?? throw new ArgumentException("Payload is required");
+
+        var result = await service.VerifyInvoiceAsync(payload, ct);
+
+        return Results.Json(new
+        {
+            success = true,
+            message = "Invoice verification completed",
+            data = result,
+            meta = new { statusCode = 200, version = "v1", timestamp = DateTimeOffset.UtcNow.ToString("O") }
+        }, statusCode: 200);
+    }
+    catch (KeyNotFoundException knf)
+    {
+        return Results.Json(new { success = false, message = knf.Message }, statusCode: 404);
+    }
+    catch (ArgumentException ax)
+    {
+        return Results.Json(new { success = false, message = ax.Message }, statusCode: 400);
+    }
+    catch (InvalidOperationException iox)
+    {
+        return Results.Json(new { success = false, message = iox.Message }, statusCode: 502);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(detail: ex.Message, statusCode: 400);
+    }
+})
+.WithName("VerifyInvoice");
+
 
 // GET: api/v1/cards/{cardId}/logs?limit=50&offset=0
 apiV1.MapGet("/cards/{cardId:int}/logs", async (int cardId,ProfileService profileService, [FromQuery] int? limit = 30, [FromQuery] int? offset = 0) =>
@@ -193,6 +271,30 @@ apiV1.MapGet("/cards/{cardId:int}/logs", async (int cardId,ProfileService profil
     }
 })
 .WithName("GetAuditLogsByCardId");
+
+// GET: api/v1/users/{userId}/cards/logs-as-receiver?limit=50&offset=0 — logs for cards where receiver_id == userId, newest first
+apiV1.MapGet("/users/{userId:int}/cards/logs-as-receiver", async (int userId, ProfileService profileService, [FromQuery] int? limit = 50, [FromQuery] int? offset = 0) =>
+{
+    try
+    {
+        var l = limit ?? 50;
+        var o = offset ?? 0;
+        var result = await profileService.GetAuditLogsForReceiverUserId(userId, l, o);
+
+        return Results.Json(new
+        {
+            success = true,
+            message = "Receiver card audit logs fetched",
+            data = result,
+            meta = new { statusCode = 200, version = "v1", timestamp = DateTimeOffset.UtcNow.ToString("O") }
+        }, statusCode: 200);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(detail: ex.Message, statusCode: 400);
+    }
+})
+.WithName("GetAuditLogsForReceiverCards");
 
 
 // GET card with logs by cardId
@@ -232,6 +334,8 @@ apiV1.MapGet("/cards/by-user/{userId:int}", async (int userId,IntPayService serv
     }
     catch (Exception ex) { return Results.Problem(detail: ex.Message, statusCode: 400); }
 }).WithName("GetCardsForUser");
+
+
 
 
 app.MapControllers();
