@@ -13,6 +13,11 @@ namespace IntPay.Api.supabase.Models
         public string? City { get; init; }
         public string? Country { get; init; } // إذا موجود في الجدول
         public string? ExternalId { get; init; } // إن أضفت حقل للـ idempotency
+        public int? EntityId { get; init; }
+        public string? Action { get; init; }
+        /// <summary>JSON string from response_data (jsonb).</summary>
+        public string? ResponseData { get; init; }
+        public DateTime? OccurredAt { get; init; }
     }
     public static class AuditLogMapping
   {
@@ -27,6 +32,10 @@ namespace IntPay.Api.supabase.Models
       Reason = src.Reason,
       CreatedAt = src.CreatedAt,
       City = src.City,
+      EntityId = src.EntityId,
+      Action = src.Action,
+      ResponseData = src.ResponseData,
+      OccurredAt = src.OccurredAt,
       // Country و ExternalId: ضعها فقط إذا موجودة فعلاً في نموذج AuditLog
       Country = GetPropertyValue<string?>(src, "Country"),
       ExternalId = GetPropertyValue<string?>(src, "external_id")

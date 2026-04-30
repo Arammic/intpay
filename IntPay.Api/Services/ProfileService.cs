@@ -93,17 +93,80 @@ public class ProfileService
             .Where(x => x.Id == profileId)
             .Single();
 
-        return response ?? throw new Exception("Profile not found");
+        return response ?? throw new KeyNotFoundException("Profile not found");
     }
 
     public async Task<Profile> AddFunds(int profileId, decimal amount)
     {
+        if (amount <= 0)
+            throw new ArgumentException("Amount must be greater than zero.", nameof(amount));
+
         var profile = await GetById(profileId);
         profile.VaultBalance += amount;
 
         var response = await _client.From<Profile>().Update(profile);
-        return response.Model;
-    }public async Task<PagedAuditLogsResponse> GetAuditLogsByCardId(int cardId, int limit = 50, int offset = 0)
+        return response.Model ?? throw new InvalidOperationException("Failed to update profile vault balance.");
+    }
+
+    /// <summary>
+    /// Audit logs for every card whose intent has <paramref name="userId"/> as <c>receiver_id</c>,
+    /// ordered by <c>created_at</c> descending (newest first).
+    /// </summary>
+    public async Task<ReceiverPagedAuditLogsResponse> GetAuditLogsForReceiverUserId(int userId, int limit = 50, int offset = 0)
+    {
+        limit = Math.Clamp(limit, 1, 1000);
+        offset = Math.Max(0, offset);
+
+        var cardsResp = await _client.From<RichIntentCardView>()
+            .Where(x => x.ReceiverId == userId)
+            .Get();
+
+        var cardIds = (cardsResp.Models ?? new List<RichIntentCardView>())
+            .Select(x => x.CardId)
+            .Distinct()
+            .ToList();
+
+        if (cardIds.Count == 0)
+        {
+            return new ReceiverPagedAuditLogsResponse
+            {
+                ReceiverUserId = userId,
+                Total = 0,
+                Limit = limit,
+                Offset = offset,
+                Logs = new List<AuditLogDto>()
+            };
+        }
+
+        var filters = cardIds
+            .Select<int, IPostgrestQueryFilter>(id => new Supabase.Postgrest.QueryFilter("card_id", Operator.Equals, id))
+            .ToList();
+
+        var countResp = await _client.From<AuditLog>().Or(filters).Get();
+        var total = countResp.Models?.Count ?? 0;
+
+        var logsResp = await _client.From<AuditLog>()
+            .Or(filters)
+            .Order("created_at", Ordering.Descending)
+            .Limit(limit)
+            .Offset(offset)
+            .Get();
+
+        var logs = (logsResp.Models ?? new List<AuditLog>())
+            .Select(l => l.ToDto())
+            .ToList();
+
+        return new ReceiverPagedAuditLogsResponse
+        {
+            ReceiverUserId = userId,
+            Total = total,
+            Limit = limit,
+            Offset = offset,
+            Logs = logs
+        };
+    }
+
+    public async Task<PagedAuditLogsResponse> GetAuditLogsByCardId(int cardId, int limit = 50, int offset = 0)
 {
     limit = Math.Clamp(limit, 1, 1000);
     offset = Math.Max(0, offset);

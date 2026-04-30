@@ -31,4 +31,19 @@ public class AuditLog : BaseModel
 
     [Column("city")]
     public string? City { get; set; }
+
+    /// <summary>Logical entity for this audit row (e.g. intent id for invoice verification).</summary>
+    [Column("entity_id")]
+    public int? EntityId { get; set; }
+
+    [Column("action")]
+    public string? Action { get; set; }
+
+    /// <summary>JSON payload (stored as jsonb).</summary>
+    [Column("response_data")]
+    public string? ResponseData { get; set; }
+
+    /// <summary>When the audited event occurred (mirrors API "Timestamp").</summary>
+    [Column("occurred_at")]
+    public DateTime? OccurredAt { get; set; }
 }

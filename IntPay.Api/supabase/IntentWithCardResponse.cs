@@ -23,6 +23,9 @@ public record CardDetailsResponse
     public DateTime CreatedAt { get; init; }
     public string Status { get; init; } = "LOCKED";
 
+    /// <summary>Locked when invoice verification failed (virtual_cards.is_locked).</summary>
+    public bool IsLocked { get; init; }
+
     // Physical Card Details
     public string CardNumber { get; init; } = string.Empty;
     public string Last4 { get; init; } = string.Empty;
@@ -158,7 +161,8 @@ public static class IntentMappingExtensions
                 Id = card.Id,
                 StripeId = card.StripeCardId,
                 CreatedAt = intent.CreatedAt,
-                Status = intent.Status,
+                Status = card.Status,
+                IsLocked = card.IsLocked,
                 CardNumber = card.CardNumber,
                 Last4 = card.Last4,
                 Cvv = card.CardCvv,

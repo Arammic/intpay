@@ -11,10 +11,15 @@ namespace IntPay.Api.Services
     public class IntPayService
     {
         private readonly Supabase.Client _client;
+        private readonly InvoiceVerificationService _invoiceVerification;
         private static readonly decimal CREATE_CARD_FEE = 0.05m; //
         private static readonly string[] ECOMMERCE_MCC_PREFIXES = { "4816", "5815", "5816", "5964", "5968", "5969", "7273", "7372" }; //
 
-        public IntPayService(Supabase.Client client) => _client = client;
+        public IntPayService(Supabase.Client client, InvoiceVerificationService invoiceVerification)
+        {
+            _client = client;
+            _invoiceVerification = invoiceVerification;
+        }
 
         public async Task<IntentWithCardResponse> CreateIntentWithCard(CreateIntentRequest payload)
         {
@@ -114,6 +119,112 @@ namespace IntPay.Api.Services
                 await _client.From<Profile>().Update(creator);
             }
         }
+
+        /// <summary>Runs invoice image verification for an intent; locks/unlocks virtual card and writes audit_logs.</summary>
+        public async Task<object> VerifyInvoiceAsync(VerifyInvoiceRequest request, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (request.IntentId <= 0)
+                throw new ArgumentException("intentId must be positive.", nameof(request.IntentId));
+            if (string.IsNullOrWhiteSpace(request.ImageUrl))
+                throw new ArgumentException("imageUrl is required.", nameof(request.ImageUrl));
+
+            var intent = await _client.From<Intent>()
+                .Where(x => x.Id == request.IntentId)
+                .Single();
+
+            if (intent == null)
+                throw new KeyNotFoundException($"Intent {request.IntentId} not found.");
+
+            var card = await _client.From<VirtualCard>()
+                .Where(x => x.IntentId == intent.Id)
+                .Single();
+
+            if (card == null)
+                throw new KeyNotFoundException("Virtual card not found for intent.");
+
+            if (!intent.RequiredInvoiceProve)
+            {
+                return new
+                {
+                    skippedVerification = true,
+                    isMatch = true,
+                    reason = "Invoice verification not required for this intent.",
+                    cardLocked = card.IsLocked
+                };
+            }
+
+            var llm = await _invoiceVerification.VerifyAgainstIntentAsync(intent, request.ImageUrl.Trim(), cancellationToken);
+
+            var now = DateTime.UtcNow;
+            var responseBlob = JsonSerializer.Serialize(new
+            {
+                isMatch = llm.IsMatch,
+                reason = llm.Reason,
+                provider = llm.Provider,
+                rawContent = llm.RawContent,
+                invoiceCity = llm.InvoiceCity,
+                invoiceCountry = llm.InvoiceCountry,
+                hasGps = llm.HasGps,
+                gpsLatitude = llm.GpsLatitude,
+                gpsLongitude = llm.GpsLongitude,
+                metadataCity = llm.MetadataCity,
+                metadataCountry = llm.MetadataCountry
+            });
+
+            if (!llm.IsMatch)
+            {
+                card.IsLocked = true;
+                await _client.From<VirtualCard>().Update(card);
+
+                await _client.From<AuditLog>().Insert(new AuditLog
+                {
+                    CardId = card.Id,
+                    EntityId = intent.Id,
+                    Action = "invoice_verification",
+                    Decision = "declined",
+                    Reason = llm.Reason,
+                    ResponseData = responseBlob,
+                    TransactionAmount = 0,
+                    CreatedAt = now,
+                    OccurredAt = now
+                });
+            }
+            else
+            {
+                card.IsLocked = false;
+                await _client.From<VirtualCard>().Update(card);
+
+                await _client.From<AuditLog>().Insert(new AuditLog
+                {
+                    CardId = card.Id,
+                    EntityId = intent.Id,
+                    Action = "invoice_verification",
+                    Decision = "approved",
+                    Reason = null,
+                    ResponseData = responseBlob,
+                    TransactionAmount = 0,
+                    CreatedAt = now,
+                    OccurredAt = now
+                });
+            }
+
+            return new
+            {
+                isMatch = llm.IsMatch,
+                reason = llm.Reason,
+                cardLocked = card.IsLocked,
+                provider = llm.Provider,
+                invoiceCity = llm.InvoiceCity,
+                invoiceCountry = llm.InvoiceCountry,
+                hasGps = llm.HasGps,
+                gpsLatitude = llm.GpsLatitude,
+                gpsLongitude = llm.GpsLongitude,
+                metadataCity = llm.MetadataCity,
+                metadataCountry = llm.MetadataCountry
+            };
+        }
+
         public async Task<object> SimulateTapToPay(TapToPayRequest payload)
         {
             // 1. Fetch card and intent
@@ -162,7 +273,29 @@ namespace IntPay.Api.Services
                 return new { approved = false, reason = "Intent not found" };
             }
 
-            // 2. Check time-gated activation
+            // 2. Invoice verification lock (must fail authorization when card is locked)
+            if (card.IsLocked)
+            {
+                var invoiceLockLog = new AuditLog
+                {
+                    CardId = card.Id,
+                    EntityId = intent.Id,
+                    Action = "authorization",
+                    TransactionAmount = payload.Amount,
+                    MerchantName = payload.MerchantName,
+                    Mcc = payload.Mcc,
+                    City = payload.City,
+                    Decision = "declined",
+                    Reason = "Card locked due to invoice mismatch",
+                    CreatedAt = DateTime.UtcNow,
+                    OccurredAt = DateTime.UtcNow
+                };
+
+                await _client.From<AuditLog>().Insert(invoiceLockLog);
+                return new { approved = false, reason = "Card locked due to invoice mismatch" };
+            }
+
+            // 3. Check time-gated activation
             if (intent.FirstDateToUser.HasValue && DateTime.UtcNow < intent.FirstDateToUser.Value)
             {
                 var lockedLog = new AuditLog
@@ -181,7 +314,7 @@ namespace IntPay.Api.Services
                 return new { approved = false, reason = "Card is locked by time" };
             }
 
-            // 3. Authorization Logic
+            // 4. Authorization Logic
             bool approved = true;
             string reason = "approved";
 
@@ -201,7 +334,7 @@ namespace IntPay.Api.Services
                 reason = $"MCC [{payload.Mcc}] not allowed";
             }
 
-            // 4. Create audit log (approved or declined)
+            // 5. Create audit log (approved or declined)
             var audit = new AuditLog
             {
                 CardId = card.Id,
@@ -217,7 +350,7 @@ namespace IntPay.Api.Services
             // Insert audit log (we don't strictly require the returned row here)
             await _client.From<AuditLog>().Insert(audit);
 
-            // 5. Handle Post-Approval Updates
+            // 6. Handle Post-Approval Updates
             if (approved)
             {
                 // Decrement counters in DB (use the same pattern you use elsewhere)
@@ -284,13 +417,14 @@ namespace IntPay.Api.Services
             {
                 Id = row.CardId,
                 StripeCardId = row.StripeCardId,
+                IntentId = row.IntentId,
                 CardNumber = row.CardNumber,
                 Last4 = row.Last4,
                 CardCvv = row.CardCvv,
                 CardholderName = row.CardholderName,
                 ExpMonth = row.ExpMonth,
                 ExpYear = row.ExpYear,
-                Status = row.Status
+                Status = row.Status,
             };
 
             var rich = intent.ToRichResponse(currentUserId: profileId ?? row.CreatorId, card: card, senderName: row.SenderName);
@@ -339,13 +473,14 @@ namespace IntPay.Api.Services
             {
                 Id = row.CardId,
                 StripeCardId = row.StripeCardId,
+                IntentId = row.IntentId,
                 CardNumber = row.CardNumber,
                 Last4 = row.Last4,
                 CardCvv = row.CardCvv,
                 CardholderName = row.CardholderName,
                 ExpMonth = row.ExpMonth,
                 ExpYear = row.ExpYear,
-                Status = row.Status ?? row.Status
+                Status = row.Status,
             };
 
             return intent.ToRichResponse(currentUserId: userId, card: card, senderName: row.SenderName);
@@ -402,13 +537,14 @@ namespace IntPay.Api.Services
                 {
                     Id = row.CardId,
                     StripeCardId = row.StripeCardId,
+                    IntentId = row.IntentId,
                     CardNumber = row.CardNumber,
                     Last4 = row.Last4,
                     CardCvv = row.CardCvv,
                     CardholderName = row.CardholderName,
                     ExpMonth = row.ExpMonth,
                     ExpYear = row.ExpYear,
-                    Status = row.Status
+                    Status = row.Status,
                 };
 
                 items.Add(intent.ToRichResponse(currentUserId: userId, card: card, senderName: row.SenderName));
