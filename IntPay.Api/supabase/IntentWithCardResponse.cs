@@ -62,14 +62,48 @@ public record MccItem(
 public static class MccMapper
 {
     private static readonly Dictionary<string, (string Name, string Group)> MccLookup = new()
-    {
-        { "5411", ("Grocery Stores", "Shopping") },
-        { "4121", ("Taxicabs and Limousines", "Transportation") },
-        { "5812", ("Restaurants", "Food & Drink") },
-        { "7372", ("Computer Programming", "Services") },
-        // Add more common codes here
-    };
+{
+    // --- Food & Drink ---
+    { "5411", ("Grocery Stores", "Food & Drink") },
+    { "5812", ("Restaurants", "Food & Drink") },
+    { "5814", ("Fast Food", "Food & Drink") },
+    { "5813", ("Bars & Nightlife", "Food & Drink") },
+    { "5499", ("Convenience Stores", "Food & Drink") },
 
+    // --- Transport ---
+    { "4121", ("Taxis & Rideshare", "Transport") },
+    { "4111", ("Public Transit", "Transport") },
+    { "5541", ("Gas Stations", "Transport") },
+    { "7523", ("Parking", "Transport") },
+    { "4511", ("Airlines", "Transport") },
+    { "7011", ("Hotels", "Transport") },
+
+    // --- Shopping ---
+    { "5732", ("Electronics", "Shopping") },
+    { "5651", ("Clothing", "Shopping") },
+    { "5912", ("Pharmacies", "Shopping") },
+    { "5942", ("Bookstores", "Shopping") },
+    { "5311", ("Department Stores", "Shopping") },
+    { "5945", ("Hobby & Toy Stores", "Shopping") },
+
+    // --- Health ---
+    { "8011", ("Doctors", "Health") },
+    { "8021", ("Dentists", "Health") },
+    { "7298", ("Spa & Wellness", "Health") },
+    { "7997", ("Gyms", "Health") },
+
+    // --- Services ---
+    { "4900", ("Utilities", "Services") },
+    { "4814", ("Telecom", "Services") },
+    { "5968", ("Subscriptions", "Services") },
+    { "8299", ("Education", "Services") },
+    { "7372", ("Computer Programming", "Services") }, // أضفتها بناءً على الكود القديم لديك
+
+    // --- Entertainment ---
+    { "7832", ("Movie Theaters", "Entertainment") },
+    { "7929", ("Concerts & Live Events", "Entertainment") },
+    { "7994", ("Video Games", "Entertainment") }
+};
     public static List<MccItem> MapToRichList(List<string>? codes)
     {
         if (codes == null || !codes.Any()) return new List<MccItem>();

@@ -33,3 +33,12 @@ _ReSharper*/
 
 ## --- Rider / JetBrains (اختياري) ---
 .idea/
+
+# Visual Studio local settings and SQLite cache
+.vs/
+
+# Publish profiles (Contains WebDeploy credentials)
+IntPay.Api/Properties/PublishProfiles/
+
+# Local tool settings (Optional, but often local-specific)
+dotnet-tools.json
