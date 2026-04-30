@@ -15,7 +15,20 @@ Returns a profile by ID with recalculated `lockMoney` (derived from active inten
 | --- | --- | --- | --- | --- |
 | `id` | Path | `int` | Yes | Profile ID. |
 
-**Response (200 OK)**
+**Response Shape (200 OK)**
+
+```json
+{
+  "id": "<int>",
+  "name": "<string>",
+  "username": "<string>",
+  "email": "<string>",
+  "vaultBalance": "<decimal>",
+  "lockMoney": "<decimal>"
+}
+```
+
+**Response Example (200 OK)**
 
 ```json
 {
@@ -61,7 +74,53 @@ Creates an intent and a linked virtual card.
 }
 ```
 
-**Response (201 Created)**
+**Response Shape (201 Created)**
+
+```json
+{
+  "data": {
+    "intentId": "<int>",
+    "city": "<string>",
+    "country": "<string>",
+    "description": "<string|null>",
+    "mccList": [
+      { "code": "<string>", "name": "<string>", "group": "<string>" }
+    ],
+    "requiredInvoiceProve": "<bool>",
+    "card": {
+      "id": "<int>",
+      "stripeId": "<string>",
+      "createdAt": "<datetime-iso8601>",
+      "status": "<string>",
+      "cardNumber": "<string>",
+      "last4": "<string>",
+      "cvv": "<string>",
+      "expiryDate": "<string>",
+      "expiryMonth": "<int>",
+      "expiryYear": "<int>",
+      "cardholderName": "<string>",
+      "amount": "<decimal>",
+      "remainingAmount": "<decimal>",
+      "useTimes": "<short>",
+      "usesLeft": "<short>",
+      "unLockedAt": "<datetime-iso8601|null>",
+      "minutesToUnlock": "<long>",
+      "hoursToUnlock": "<long>",
+      "daysToUnlock": "<long>",
+      "timeRemainingLeveled": "<string>",
+      "daysLocked": "<int>",
+      "creatorId": "<int>",
+      "retrieveId": "<int>",
+      "type": "<string>",
+      "senderName": "<string|null>"
+    }
+  },
+  "message": "<string>",
+  "status": "<int>"
+}
+```
+
+**Response Example (201 Created)**
 
 ```json
 {
@@ -125,7 +184,76 @@ Returns home summary totals and categorized card sections (`selfCards`, `receive
 | --- | --- | --- | --- | --- |
 | `user_id` | Path | `int` | Yes | User/profile ID. |
 
-**Response (200 OK)**
+**Response Shape (200 OK)**
+
+```json
+{
+  "success": "<bool>",
+  "message": "<string>",
+  "data": {
+    "freeMoney": "<decimal>",
+    "lockMoney": "<decimal>",
+    "totalActivityCount": "<int>",
+    "selfCards": {
+      "items": [
+        {
+          "intentId": "<int>",
+          "city": "<string>",
+          "country": "<string>",
+          "description": "<string|null>",
+          "mccList": [
+            { "code": "<string>", "name": "<string>", "group": "<string>" }
+          ],
+          "requiredInvoiceProve": "<bool>",
+          "card": {
+            "id": "<int>",
+            "stripeId": "<string>",
+            "createdAt": "<datetime-iso8601>",
+            "status": "<string>",
+            "cardNumber": "<string>",
+            "last4": "<string>",
+            "cvv": "<string>",
+            "expiryDate": "<string>",
+            "expiryMonth": "<int>",
+            "expiryYear": "<int>",
+            "cardholderName": "<string>",
+            "amount": "<decimal>",
+            "remainingAmount": "<decimal>",
+            "useTimes": "<short>",
+            "usesLeft": "<short>",
+            "unLockedAt": "<datetime-iso8601|null>",
+            "minutesToUnlock": "<long>",
+            "hoursToUnlock": "<long>",
+            "daysToUnlock": "<long>",
+            "timeRemainingLeveled": "<string>",
+            "daysLocked": "<int>",
+            "creatorId": "<int>",
+            "retrieveId": "<int>",
+            "type": "<string>",
+            "senderName": "<string|null>"
+          }
+        }
+      ],
+      "count": "<int>"
+    },
+    "receivedCards": {
+      "items": [],
+      "count": "<int>"
+    },
+    "sentCards": {
+      "items": [],
+      "count": "<int>"
+    }
+  },
+  "meta": {
+    "statusCode": "<int>",
+    "version": "<string>",
+    "timestamp": "<datetimeoffset-iso8601>"
+  }
+}
+```
+
+**Response Example (200 OK)**
 
 ```json
 {
@@ -223,7 +351,25 @@ Simulates a card tap-to-pay authorization and writes an audit log.
 }
 ```
 
-**Response (200 OK)**
+**Response Shape (200 OK)**
+
+```json
+{
+  "success": "<bool>",
+  "message": "<string>",
+  "data": {
+    "approved": "<bool>",
+    "reason": "<string>"
+  },
+  "meta": {
+    "statusCode": "<int>",
+    "version": "<string>",
+    "timestamp": "<datetimeoffset-iso8601>"
+  }
+}
+```
+
+**Response Example (200 OK)**
 
 ```json
 {
@@ -260,7 +406,41 @@ Returns paged audit logs for a specific card.
 | `limit` | Query | `int?` | No | Page size. Default handler arg `30`; service clamps range to `1..1000`. |
 | `offset` | Query | `int?` | No | Page offset. Default `0`. |
 
-**Response (200 OK)**
+**Response Shape (200 OK)**
+
+```json
+{
+  "success": "<bool>",
+  "message": "<string>",
+  "data": {
+    "cardId": "<int>",
+    "total": "<int>",
+    "limit": "<int>",
+    "offset": "<int>",
+    "logs": [
+      {
+        "id": "<int>",
+        "cardId": "<int>",
+        "transactionAmount": "<decimal>",
+        "merchantName": "<string|null>",
+        "mcc": "<string|null>",
+        "decision": "<string>",
+        "reason": "<string|null>",
+        "createdAt": "<datetime-iso8601>",
+        "city": "<string|null>",
+        "country": "<string|null>",
+        "externalId": "<string|null>"
+      }
+    ]
+  },
+  "meta": {
+    "statusCode": "<int>",
+    "timestamp": "<datetimeoffset-iso8601>"
+  }
+}
+```
+
+**Response Example (200 OK)**
 
 ```json
 {
@@ -311,7 +491,70 @@ Returns a single card plus its audit logs, with optional access check by `profil
 | `cardId` | Path | `int` | Yes | Card ID. |
 | `profileId` | Query | `int?` | No | If provided, used to validate card access against creator/receiver. |
 
-**Response (200 OK)**
+**Response Shape (200 OK)**
+
+```json
+{
+  "success": "<bool>",
+  "message": "<string>",
+  "data": {
+    "card": {
+      "intentId": "<int>",
+      "city": "<string>",
+      "country": "<string>",
+      "description": "<string|null>",
+      "mccList": [
+        { "code": "<string>", "name": "<string>", "group": "<string>" }
+      ],
+      "requiredInvoiceProve": "<bool>",
+      "card": {
+        "id": "<int>",
+        "stripeId": "<string>",
+        "createdAt": "<datetime-iso8601>",
+        "status": "<string>",
+        "cardNumber": "<string>",
+        "last4": "<string>",
+        "cvv": "<string>",
+        "expiryDate": "<string>",
+        "expiryMonth": "<int>",
+        "expiryYear": "<int>",
+        "cardholderName": "<string>",
+        "amount": "<decimal>",
+        "remainingAmount": "<decimal>",
+        "useTimes": "<short>",
+        "usesLeft": "<short>",
+        "unLockedAt": "<datetime-iso8601|null>",
+        "minutesToUnlock": "<long>",
+        "hoursToUnlock": "<long>",
+        "daysToUnlock": "<long>",
+        "timeRemainingLeveled": "<string>",
+        "daysLocked": "<int>",
+        "creatorId": "<int>",
+        "retrieveId": "<int>",
+        "type": "<string>",
+        "senderName": "<string|null>"
+      }
+    },
+    "logs": [
+      {
+        "id": "<int>",
+        "cardId": "<int>",
+        "transactionAmount": "<decimal>",
+        "merchantName": "<string|null>",
+        "mcc": "<string|null>",
+        "decision": "<string>",
+        "reason": "<string|null>",
+        "createdAt": "<datetime-iso8601>",
+        "city": "<string|null>",
+        "country": "<string|null>",
+        "externalId": "<string|null>"
+      }
+    ]
+  }
+}
+```
+
+**Response Example (200 OK)**
 
 ```json
 {
@@ -390,7 +633,53 @@ Returns the latest card (by `created_at DESC`) where user is creator or receiver
 | --- | --- | --- | --- | --- |
 | `userId` | Path | `int` | Yes | User ID. |
 
-**Response (200 OK)**
+**Response Shape (200 OK)**
+
+```json
+{
+  "success": "<bool>",
+  "message": "<string>",
+  "data": {
+    "intentId": "<int>",
+    "city": "<string>",
+    "country": "<string>",
+    "description": "<string|null>",
+    "mccList": [
+      { "code": "<string>", "name": "<string>", "group": "<string>" }
+    ],
+    "requiredInvoiceProve": "<bool>",
+    "card": {
+      "id": "<int>",
+      "stripeId": "<string>",
+      "createdAt": "<datetime-iso8601>",
+      "status": "<string>",
+      "cardNumber": "<string>",
+      "last4": "<string>",
+      "cvv": "<string>",
+      "expiryDate": "<string>",
+      "expiryMonth": "<int>",
+      "expiryYear": "<int>",
+      "cardholderName": "<string>",
+      "amount": "<decimal>",
+      "remainingAmount": "<decimal>",
+      "useTimes": "<short>",
+      "usesLeft": "<short>",
+      "unLockedAt": "<datetime-iso8601|null>",
+      "minutesToUnlock": "<long>",
+      "hoursToUnlock": "<long>",
+      "daysToUnlock": "<long>",
+      "timeRemainingLeveled": "<string>",
+      "daysLocked": "<int>",
+      "creatorId": "<int>",
+      "retrieveId": "<int>",
+      "type": "<string>",
+      "senderName": "<string|null>"
+    }
+  }
+}
+```
+
+**Response Example (200 OK)**
 
 ```json
 {
@@ -454,7 +743,60 @@ Returns paged cards for a user (where user is creator or receiver).
 | `limit` | Query | `int?` | No | Requested page size; service clamps to `1..1000`. |
 | `offset` | Query | `int?` | No | Page offset; service enforces minimum `0`. |
 
-**Response (200 OK)**
+**Response Shape (200 OK)**
+
+```json
+{
+  "success": "<bool>",
+  "message": "<string>",
+  "data": {
+    "total": "<int>",
+    "limit": "<int>",
+    "offset": "<int>",
+    "items": [
+      {
+        "intentId": "<int>",
+        "city": "<string>",
+        "country": "<string>",
+        "description": "<string|null>",
+        "mccList": [
+          { "code": "<string>", "name": "<string>", "group": "<string>" }
+        ],
+        "requiredInvoiceProve": "<bool>",
+        "card": {
+          "id": "<int>",
+          "stripeId": "<string>",
+          "createdAt": "<datetime-iso8601>",
+          "status": "<string>",
+          "cardNumber": "<string>",
+          "last4": "<string>",
+          "cvv": "<string>",
+          "expiryDate": "<string>",
+          "expiryMonth": "<int>",
+          "expiryYear": "<int>",
+          "cardholderName": "<string>",
+          "amount": "<decimal>",
+          "remainingAmount": "<decimal>",
+          "useTimes": "<short>",
+          "usesLeft": "<short>",
+          "unLockedAt": "<datetime-iso8601|null>",
+          "minutesToUnlock": "<long>",
+          "hoursToUnlock": "<long>",
+          "daysToUnlock": "<long>",
+          "timeRemainingLeveled": "<string>",
+          "daysLocked": "<int>",
+          "creatorId": "<int>",
+          "retrieveId": "<int>",
+          "type": "<string>",
+          "senderName": "<string|null>"
+        }
+      }
+    ]
+  }
+}
+```
+
+**Response Example (200 OK)**
 
 ```json
 {
