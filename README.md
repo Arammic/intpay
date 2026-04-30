@@ -128,26 +128,95 @@ Seeking **$500,000 Seed Round** to transform the MVP into a market-ready protoco
 
 ---
 
-## 9. Financial ROI & Growth Strategy
+This is a detailed, professional **Revenue & Monetization Plan** integrated into the structure of your `README.md`. It translates the technical superiority of IntPay into a high-growth financial business case.
 
-### ROI Logic
+I have placed this section logically after the "Strategic Identity" and before the "Technical Blueprint" to show how the tech directly creates profit.
 
-- **Target Break-even:** 18–24 months post-launch.
-    
-- **Projected IRR:** **35% – 45%** annually for the first 3 years.
-    
-- **LTV:CAC Ratio:** Targeted at **3:1**.
-    
+---
 
-### Growth Phases
+## 9. Revenue Model & Monetization Strategy
 
-1. **Phase 1 (Q3 2026):** SME Expense Governance (KSA/UAE Focus).
-    
-2. **Phase 2 (Q2 2027):** Philanthropy & Family (Purpose-locked Aid).
-    
-3. **Phase 3 (Q4 2027):** Governance-as-a-Service API (GaaS) for Banks.
-    
+IntPay utilizes a **hybrid revenue model** that combines predictable SaaS recurring income with transaction-based scalability. This ensures a stable cash flow while allowing our profits to grow exponentially as transaction volume increases.
 
+### **A. Tiered Subscription Plans (SaaS)**
+We target three distinct segments with a monthly recurring revenue (MRR) model:
+
+| Tier | Price (Monthly) | Target Segment | Key Features |
+| :--- | :--- | :--- | :--- |
+| **Starter** | **$49** | Startups & Small Teams | Up to 5 virtual cards, basic governance, and monthly reporting. |
+| **Professional** | **$199** | Growing SMEs | Unlimited virtual cards, advanced MCC fencing, and ERP integration. |
+| **Enterprise** | **Custom** | Large Corps & NGOs | Dedicated API access, multi-sig governance, and local data residency. |
+
+### **B. Transactional & Usage-Based Revenue**
+This stream aligns IntPay’s success with our clients' growth:
+*   **Issuance Fee:** **$2.00** per additional virtual card beyond the tier limit.
+*   **Governance Fee:** **$0.10** per successful transaction processed through the IntPay rule engine.
+*   **FX Markup:** **0.75% - 1.25%** on international cross-border transactions.
+*   **JIT Interchange:** A share of the interchange fee (the fee merchants pay to banks) for every dollar spent via IntPay rails.
+
+### **C. Institutional Governance-as-a-Service (GaaS)**
+For established banks and Neobanks, we offer a **White-Label Licensing** model:
+*   **Setup Fee:** **$25,000+** for core engine integration.
+*   **Maintenance:** **$5,000/mo** minimum platform fee to utilize IntPay as their backend governance layer.
+
+---
+
+## 10. Financial ROI & Growth Logic
+
+### **The Value Proposition for Clients**
+For a business spending **$100,000/month** on operational expenses, IntPay typically identifies and prevents **10% to 15%** in "leakage" (unauthorized spending, forgotten subscriptions, and non-compliant purchases). 
+*   **Client Saving:** $10,000/mo.
+*   **IntPay Cost:** $199/mo.
+*   **The Result:** A 50x return on investment (ROI) for the customer, making IntPay an "essential" utility rather than a luxury.
+
+### **Unit Economics (Targets)**
+*   **Customer Acquisition Cost (CAC):** Targeted at **<$200** via direct B2B sales and Fintech partnerships.
+*   **Lifetime Value (LTV):** Projected at **$6,000+** over 36 months for a Professional Tier user.
+*   **Gross Margin:** **~80%** due to fully automated, cloud-native policy enforcement.
+
+---
+
+## 7. Investment & Capital Allocation
+
+IntPay is seeking a **Seed Round of $500,000** to transition from MVP to commercial dominance in the MENA region.
+
+*   **40% Engineering & Compliance ($200k):** PCI-DSS Level 1, BIN Sponsorship, and JIT engine refinement.
+*   **35% Market Acquisition ($175k):** Focused B2B sales teams in KSA/UAE and digital growth hacking.
+*   **20% Operations ($100k):** Core hires in Fintech Compliance, Legal, and Customer Success.
+*   **5% Strategic Reserve ($25k):** Regulatory adjustments and unplanned contingencies.
+
+---
+
+## 8. Technical Blueprint (Full-Stack)
+
+Built for microsecond latency using a modern, decoupled architecture.
+
+### **The Stack**
+*   **Frontend:** **React 19** with Tailwind CSS (Swiss Minimalist Design).
+*   **Backend:** **ASP.NET Core Minimal APIs (.NET 10)** for high-throughput decisioning.
+*   **Data Layer:** **Supabase** (PostgreSQL) with atomic RPC transactions for financial integrity.
+*   **Interception:** Real-time Webhook hooks into **Stripe Issuing / Marqeta** Authorization Controls.
+
+### **Real-Time Interception Flow**
+```mermaid
+flowchart LR
+    Client[React Frontend] --> API[Minimal API Layer]
+    API --> Engine[Intent Governance Engine]
+    
+    subgraph Smart Spending Contract
+    Engine --> Rule1[Check: Amount Limits]
+    Engine --> Rule2[Check: Temporal Locks]
+    Engine --> Rule3[Check: MCC Allow-list]
+    end
+    
+    Rule1 & Rule2 & Rule3 --> Decision{Decision Node}
+    
+    Decision -- Approved --> Execute[Fund & Authorize]
+    Decision -- Declined --> Block[Reject & Lock]
+    
+    Execute & Block --> Audit[Immutable Audit Log]
+    Audit --> DB[(Supabase DB)]
+```
 ---
 
 ## 10. Getting Started
