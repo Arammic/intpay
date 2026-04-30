@@ -127,13 +127,6 @@ Seeking **$500,000 Seed Round** to transform the MVP into a market-ready protoco
     
 
 ---
-
-This is a detailed, professional **Revenue & Monetization Plan** integrated into the structure of your `README.md`. It translates the technical superiority of IntPay into a high-growth financial business case.
-
-I have placed this section logically after the "Strategic Identity" and before the "Technical Blueprint" to show how the tech directly creates profit.
-
----
-
 ## 9. Revenue Model & Monetization Strategy
 
 IntPay utilizes a **hybrid revenue model** that combines predictable SaaS recurring income with transaction-based scalability. This ensures a stable cash flow while allowing our profits to grow exponentially as transaction volume increases.
@@ -174,49 +167,6 @@ For a business spending **$100,000/month** on operational expenses, IntPay typic
 *   **Lifetime Value (LTV):** Projected at **$6,000+** over 36 months for a Professional Tier user.
 *   **Gross Margin:** **~80%** due to fully automated, cloud-native policy enforcement.
 
----
-
-## 7. Investment & Capital Allocation
-
-IntPay is seeking a **Seed Round of $500,000** to transition from MVP to commercial dominance in the MENA region.
-
-*   **40% Engineering & Compliance ($200k):** PCI-DSS Level 1, BIN Sponsorship, and JIT engine refinement.
-*   **35% Market Acquisition ($175k):** Focused B2B sales teams in KSA/UAE and digital growth hacking.
-*   **20% Operations ($100k):** Core hires in Fintech Compliance, Legal, and Customer Success.
-*   **5% Strategic Reserve ($25k):** Regulatory adjustments and unplanned contingencies.
-
----
-
-## 8. Technical Blueprint (Full-Stack)
-
-Built for microsecond latency using a modern, decoupled architecture.
-
-### **The Stack**
-*   **Frontend:** **React 19** with Tailwind CSS (Swiss Minimalist Design).
-*   **Backend:** **ASP.NET Core Minimal APIs (.NET 10)** for high-throughput decisioning.
-*   **Data Layer:** **Supabase** (PostgreSQL) with atomic RPC transactions for financial integrity.
-*   **Interception:** Real-time Webhook hooks into **Stripe Issuing / Marqeta** Authorization Controls.
-
-### **Real-Time Interception Flow**
-```mermaid
-flowchart LR
-    Client[React Frontend] --> API[Minimal API Layer]
-    API --> Engine[Intent Governance Engine]
-    
-    subgraph Smart Spending Contract
-    Engine --> Rule1[Check: Amount Limits]
-    Engine --> Rule2[Check: Temporal Locks]
-    Engine --> Rule3[Check: MCC Allow-list]
-    end
-    
-    Rule1 & Rule2 & Rule3 --> Decision{Decision Node}
-    
-    Decision -- Approved --> Execute[Fund & Authorize]
-    Decision -- Declined --> Block[Reject & Lock]
-    
-    Execute & Block --> Audit[Immutable Audit Log]
-    Audit --> DB[(Supabase DB)]
-```
 ---
 
 ## 10. Getting Started
