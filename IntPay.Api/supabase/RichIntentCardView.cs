@@ -35,4 +35,7 @@ public class RichIntentCardView : BaseModel
     [Column("stripe_card_id")] public string StripeCardId { get; set; } = string.Empty;
 
     [Column("sender_name")] public string? SenderName { get; set; }
+
+    [Column("is_locked_by_pending_invoice")] public bool IsLockedByPendingInvoice { get; set; }
+    [Column("is_manually_frozen")] public bool IsManuallyFrozen { get; set; }
 }

@@ -23,8 +23,14 @@ public record CardDetailsResponse
     public DateTime CreatedAt { get; init; }
     public string Status { get; init; } = "LOCKED";
 
-    /// <summary>Locked when invoice verification failed (virtual_cards.is_locked).</summary>
-    public bool IsLocked { get; init; }
+    /// <summary>True when the last required invoice is missing or failed automated verification.</summary>
+    public bool IsLockedByPendingInvoice { get; init; }
+
+    /// <summary>True when sender or recipient froze the card via manual governance (POST lock-state).</summary>
+    public bool IsManuallyFrozen { get; init; }
+
+    /// <summary>True when any governance rule blocks spend (invoice pending or manual freeze).</summary>
+    public bool IsSpendBlocked { get; init; }
 
     // Physical Card Details
     public string CardNumber { get; init; } = string.Empty;
@@ -162,7 +168,9 @@ public static class IntentMappingExtensions
                 StripeId = card.StripeCardId,
                 CreatedAt = intent.CreatedAt,
                 Status = card.Status,
-                IsLocked = card.IsLocked,
+                IsLockedByPendingInvoice = card.IsLockedByPendingInvoice,
+                IsManuallyFrozen = card.IsManuallyFrozen,
+                IsSpendBlocked = card.IsLockedByPendingInvoice || card.IsManuallyFrozen,
                 CardNumber = card.CardNumber,
                 Last4 = card.Last4,
                 Cvv = card.CardCvv,

@@ -262,6 +262,13 @@ public sealed class InvoiceVerificationService
             ctx.MetadataCity,
             ctx.MetadataCountry);
 
+    /// <summary>
+    /// Builds the multimodal LLM instruction set for invoice image verification.
+    /// Intent fields (MCC allow-list, description, city, country, amount, category) encode the payer spend policy; mismatches become governance failures
+    /// (caller sets <c>is_locked_by_pending_invoice</c> on the virtual card when the model returns <c>isMatch: false</c>).
+    /// GPS / EXIF coordinates are weak evidence (photo capture location may differ from merchant); visible invoice address should drive geo checks.
+    /// Output is a single JSON object so <see cref="InvoiceVerificationJsonParser"/> can parse deterministically for Groq and Gemini.
+    /// </summary>
     private static string BuildVerificationPrompt(Intent intent, InvoiceVerificationContext ctx)
     {
         var mccList = intent.MccCodes is { Count: > 0 }

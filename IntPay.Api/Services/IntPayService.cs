@@ -12,13 +12,21 @@ namespace IntPay.Api.Services
     {
         private readonly Supabase.Client _client;
         private readonly InvoiceVerificationService _invoiceVerification;
+        private readonly IAuditLogWriter _audit;
+        private readonly ActiveIntentCommitmentQuery _commitmentQuery;
         private static readonly decimal CREATE_CARD_FEE = 0.05m; //
         private static readonly string[] ECOMMERCE_MCC_PREFIXES = { "4816", "5815", "5816", "5964", "5968", "5969", "7273", "7372" }; //
 
-        public IntPayService(Supabase.Client client, InvoiceVerificationService invoiceVerification)
+        public IntPayService(
+            Supabase.Client client,
+            InvoiceVerificationService invoiceVerification,
+            IAuditLogWriter audit,
+            ActiveIntentCommitmentQuery commitmentQuery)
         {
             _client = client;
             _invoiceVerification = invoiceVerification;
+            _audit = audit;
+            _commitmentQuery = commitmentQuery;
         }
 
         public async Task<IntentWithCardResponse> CreateIntentWithCard(CreateIntentRequest payload)
@@ -105,12 +113,7 @@ namespace IntPay.Api.Services
 
         private async Task SyncCreatorLockMoney(int creatorId)
         {
-            var activeIntents = await _client.From<Intent>()
-                .Where(x => x.CreatorId == creatorId)
-                .Where(x => x.Status == "active")
-                .Get();
-
-            decimal totalLocked = activeIntents.Models.Sum(x => x.RemainingAmount);
+            var totalLocked = await _commitmentQuery.SumRemainingAmountForActiveIntentsByCreatorId(creatorId);
 
             var creator = await _client.From<Profile>().Where(x => x.Id == creatorId).Single();
             if (creator != null)
@@ -145,12 +148,16 @@ namespace IntPay.Api.Services
 
             if (!intent.RequiredInvoiceProve)
             {
+                var spendBlocked = card.IsLockedByPendingInvoice || card.IsManuallyFrozen;
                 return new
                 {
                     skippedVerification = true,
                     isMatch = true,
                     reason = "Invoice verification not required for this intent.",
-                    cardLocked = card.IsLocked
+                    isLockedByPendingInvoice = card.IsLockedByPendingInvoice,
+                    isManuallyFrozen = card.IsManuallyFrozen,
+                    isSpendBlocked = spendBlocked,
+                    cardLocked = spendBlocked
                 };
             }
 
@@ -174,10 +181,10 @@ namespace IntPay.Api.Services
 
             if (!llm.IsMatch)
             {
-                card.IsLocked = true;
+                card.IsLockedByPendingInvoice = true;
                 await _client.From<VirtualCard>().Update(card);
 
-                await _client.From<AuditLog>().Insert(new AuditLog
+                await _audit.InsertAsync(new AuditLog
                 {
                     CardId = card.Id,
                     EntityId = intent.Id,
@@ -192,10 +199,10 @@ namespace IntPay.Api.Services
             }
             else
             {
-                card.IsLocked = false;
+                card.IsLockedByPendingInvoice = false;
                 await _client.From<VirtualCard>().Update(card);
 
-                await _client.From<AuditLog>().Insert(new AuditLog
+                await _audit.InsertAsync(new AuditLog
                 {
                     CardId = card.Id,
                     EntityId = intent.Id,
@@ -209,11 +216,15 @@ namespace IntPay.Api.Services
                 });
             }
 
+            var blocked = card.IsLockedByPendingInvoice || card.IsManuallyFrozen;
             return new
             {
                 isMatch = llm.IsMatch,
                 reason = llm.Reason,
-                cardLocked = card.IsLocked,
+                isLockedByPendingInvoice = card.IsLockedByPendingInvoice,
+                isManuallyFrozen = card.IsManuallyFrozen,
+                isSpendBlocked = blocked,
+                cardLocked = blocked,
                 provider = llm.Provider,
                 invoiceCity = llm.InvoiceCity,
                 invoiceCountry = llm.InvoiceCountry,
@@ -247,7 +258,7 @@ namespace IntPay.Api.Services
                     CreatedAt = DateTime.UtcNow
                 };
 
-                await _client.From<AuditLog>().Insert(missingCardLog);
+                await _audit.InsertAsync(missingCardLog);
                 return new { approved = false, reason = "Card not found" };
             }
 
@@ -269,12 +280,12 @@ namespace IntPay.Api.Services
                     CreatedAt = DateTime.UtcNow
                 };
 
-                await _client.From<AuditLog>().Insert(noIntentLog);
+                await _audit.InsertAsync(noIntentLog);
                 return new { approved = false, reason = "Intent not found" };
             }
 
-            // 2. Invoice verification lock (must fail authorization when card is locked)
-            if (card.IsLocked)
+            // 2. Governance: block spend when invoice is pending or card is manually frozen (before balance/MCC checks).
+            if (card.IsLockedByPendingInvoice)
             {
                 var invoiceLockLog = new AuditLog
                 {
@@ -286,13 +297,34 @@ namespace IntPay.Api.Services
                     Mcc = payload.Mcc,
                     City = payload.City,
                     Decision = "declined",
-                    Reason = "Card locked due to invoice mismatch",
+                    Reason = CardSpendBlockMessages.PendingInvoice,
                     CreatedAt = DateTime.UtcNow,
                     OccurredAt = DateTime.UtcNow
                 };
 
-                await _client.From<AuditLog>().Insert(invoiceLockLog);
-                return new { approved = false, reason = "Card locked due to invoice mismatch" };
+                await _audit.InsertAsync(invoiceLockLog);
+                return new { approved = false, reason = CardSpendBlockMessages.PendingInvoice };
+            }
+
+            if (card.IsManuallyFrozen)
+            {
+                var manualFreezeLog = new AuditLog
+                {
+                    CardId = card.Id,
+                    EntityId = intent.Id,
+                    Action = "authorization",
+                    TransactionAmount = payload.Amount,
+                    MerchantName = payload.MerchantName,
+                    Mcc = payload.Mcc,
+                    City = payload.City,
+                    Decision = "declined",
+                    Reason = CardSpendBlockMessages.ManualFreeze,
+                    CreatedAt = DateTime.UtcNow,
+                    OccurredAt = DateTime.UtcNow
+                };
+
+                await _audit.InsertAsync(manualFreezeLog);
+                return new { approved = false, reason = CardSpendBlockMessages.ManualFreeze };
             }
 
             // 3. Check time-gated activation
@@ -310,7 +342,7 @@ namespace IntPay.Api.Services
                     CreatedAt = DateTime.UtcNow
                 };
 
-                await _client.From<AuditLog>().Insert(lockedLog);
+                await _audit.InsertAsync(lockedLog);
                 return new { approved = false, reason = "Card is locked by time" };
             }
 
@@ -318,7 +350,7 @@ namespace IntPay.Api.Services
             bool approved = true;
             string reason = "approved";
 
-            if (intent.RemainingAmount < payload.Amount)
+            if (Money.IsInsufficient(intent.RemainingAmount, payload.Amount))
             {
                 approved = false;
                 reason = "Insufficient Remaining Amount";
@@ -348,13 +380,12 @@ namespace IntPay.Api.Services
             };
 
             // Insert audit log (we don't strictly require the returned row here)
-            await _client.From<AuditLog>().Insert(audit);
+            await _audit.InsertAsync(audit);
 
             // 6. Handle Post-Approval Updates
             if (approved)
             {
-                // Decrement counters in DB (use the same pattern you use elsewhere)
-                intent.RemainingAmount = Math.Max(0, intent.RemainingAmount - payload.Amount);
+                intent.RemainingAmount = Money.SubtractClampedToZero(intent.RemainingAmount, payload.Amount);
                 intent.UsesLeft = Math.Max(0, intent.UsesLeft - 1);
 
                 // Persist intent changes
@@ -425,6 +456,8 @@ namespace IntPay.Api.Services
                 ExpMonth = row.ExpMonth,
                 ExpYear = row.ExpYear,
                 Status = row.Status,
+                IsLockedByPendingInvoice = row.IsLockedByPendingInvoice,
+                IsManuallyFrozen = row.IsManuallyFrozen,
             };
 
             var rich = intent.ToRichResponse(currentUserId: profileId ?? row.CreatorId, card: card, senderName: row.SenderName);
@@ -481,6 +514,8 @@ namespace IntPay.Api.Services
                 ExpMonth = row.ExpMonth,
                 ExpYear = row.ExpYear,
                 Status = row.Status,
+                IsLockedByPendingInvoice = row.IsLockedByPendingInvoice,
+                IsManuallyFrozen = row.IsManuallyFrozen,
             };
 
             return intent.ToRichResponse(currentUserId: userId, card: card, senderName: row.SenderName);
@@ -545,12 +580,259 @@ namespace IntPay.Api.Services
                     ExpMonth = row.ExpMonth,
                     ExpYear = row.ExpYear,
                     Status = row.Status,
+                    IsLockedByPendingInvoice = row.IsLockedByPendingInvoice,
+                    IsManuallyFrozen = row.IsManuallyFrozen,
                 };
 
                 items.Add(intent.ToRichResponse(currentUserId: userId, card: card, senderName: row.SenderName));
             }
 
             return new PagedCardsResponse { Total = total, Limit = limit, Offset = offset, Items = items };
+        }
+
+        /// <summary>Sets manual freeze only; does not change invoice-pending lock. Creator or receiver only; writes governance audit.</summary>
+        public async Task<object> SetCardManualFreezeStateAsync(int cardId, bool frozen, int actingUserId)
+        {
+            var row = await _client.From<RichIntentCardView>()
+                .Where(x => x.CardId == cardId)
+                .Single();
+
+            if (row == null)
+                throw new KeyNotFoundException("Card not found");
+
+            if (row.CreatorId != actingUserId && row.ReceiverId != actingUserId)
+                throw new UnauthorizedAccessException("User does not have access to this card");
+
+            var card = await _client.From<VirtualCard>().Where(x => x.Id == cardId).Single();
+            if (card == null)
+                throw new KeyNotFoundException("Virtual card not found");
+
+            var previous = card.IsManuallyFrozen;
+            card.IsManuallyFrozen = frozen;
+            await _client.From<VirtualCard>().Update(card);
+
+            var now = DateTime.UtcNow;
+            var responseData = JsonSerializer.Serialize(new
+            {
+                previousManualFreeze = previous,
+                isManuallyFrozen = card.IsManuallyFrozen,
+                isLockedByPendingInvoice = card.IsLockedByPendingInvoice,
+                actingUserId
+            });
+            await _audit.InsertAsync(new AuditLog
+            {
+                CardId = card.Id,
+                EntityId = row.IntentId,
+                Action = "card_manual_freeze_set",
+                Decision = "info",
+                Reason = $"Manual freeze {(frozen ? "enabled" : "disabled")} by user {actingUserId}",
+                ResponseData = responseData,
+                TransactionAmount = 0,
+                CreatedAt = now,
+                OccurredAt = now
+            });
+
+            return new
+            {
+                cardId,
+                isManuallyFrozen = card.IsManuallyFrozen,
+                isLockedByPendingInvoice = card.IsLockedByPendingInvoice,
+                isSpendBlocked = card.IsLockedByPendingInvoice || card.IsManuallyFrozen,
+                previousManualFreeze = previous
+            };
+        }
+
+        public async Task<DashboardMetricsResponse> GetDashboardMetricsAsync(int userId)
+        {
+            var filters = new List<IPostgrestQueryFilter>
+            {
+                new Supabase.Postgrest.QueryFilter("creator_id", Operator.Equals, userId),
+                new Supabase.Postgrest.QueryFilter("receiver_id", Operator.Equals, userId)
+            };
+
+            var rowsResp = await _client.From<RichIntentCardView>().Or(filters).Get();
+            var rows = rowsResp.Models ?? new List<RichIntentCardView>();
+
+            var byIntent = rows
+                .GroupBy(r => r.IntentId)
+                .Select(g => g.First())
+                .ToList();
+
+            var cardIds = rows.Select(r => r.CardId).Distinct().ToList();
+
+            decimal spent = 0;
+            if (cardIds.Count > 0)
+            {
+                var logFilters = cardIds
+                    .Select<int, IPostgrestQueryFilter>(id => new Supabase.Postgrest.QueryFilter("card_id", Operator.Equals, id))
+                    .ToList();
+                var logsResp = await _client.From<AuditLog>().Or(logFilters).Get();
+                var logs = logsResp.Models ?? new List<AuditLog>();
+                spent = logs
+                    .Where(l => string.Equals(l.Decision, "approved", StringComparison.OrdinalIgnoreCase))
+                    .Sum(l => l.TransactionAmount);
+            }
+
+            return new DashboardMetricsResponse
+            {
+                UserId = userId,
+                TotalSpentApproved = spent,
+                TotalIntentPrincipal = byIntent.Sum(r => r.Amount),
+                TotalRemainingAcrossIntents = byIntent.Sum(r => r.RemainingAmount),
+                DistinctIntentCount = byIntent.Count,
+                DistinctCardCount = cardIds.Count
+            };
+        }
+
+        public async Task<object> GetIntentDetailAsync(int intentId, int actingUserId)
+        {
+            var intent = await _client.From<Intent>().Where(x => x.Id == intentId).Single();
+            if (intent == null)
+                throw new KeyNotFoundException($"Intent {intentId} not found");
+
+            if (intent.CreatorId != actingUserId && intent.ReceiverId != actingUserId)
+                throw new UnauthorizedAccessException("User does not have access to this intent");
+
+            var card = await _client.From<VirtualCard>().Where(x => x.IntentId == intentId).Single();
+            if (card == null)
+                throw new KeyNotFoundException("Virtual card not found for intent");
+
+            var currentUser = actingUserId;
+            string? senderName = null;
+            if (intent.CreatorId != intent.ReceiverId && intent.ReceiverId == currentUser)
+            {
+                var creator = await _client.From<Profile>().Where(x => x.Id == intent.CreatorId).Single();
+                senderName = creator?.Name;
+            }
+
+            var rich = intent.ToRichResponse(currentUserId: currentUser, card: card, senderName: senderName);
+            return new { intentId = intent.Id, intent, card, rich };
+        }
+
+        public async Task<object> PatchIntentAsync(int intentId, PatchIntentRequest patch, int actingUserId)
+        {
+            ArgumentNullException.ThrowIfNull(patch);
+
+            var intent = await _client.From<Intent>().Where(x => x.Id == intentId).Single();
+            if (intent == null)
+                throw new KeyNotFoundException($"Intent {intentId} not found");
+
+            if (intent.CreatorId != actingUserId && intent.ReceiverId != actingUserId)
+                throw new UnauthorizedAccessException("User does not have access to this intent");
+
+            var hasPatch = patch.Description != null || patch.City != null || patch.Country != null
+                || patch.Category != null || patch.MccList != null || patch.RequiredInvoiceProve.HasValue;
+            if (!hasPatch)
+                return await GetIntentDetailAsync(intentId, actingUserId);
+
+            intent.MccCodes ??= new List<string>();
+
+            var before = JsonSerializer.Serialize(new
+            {
+                intent.Description,
+                intent.City,
+                intent.Country,
+                intent.Category,
+                intent.MccCodes,
+                intent.RequiredInvoiceProve
+            });
+
+            if (patch.Description != null)
+                intent.Description = patch.Description;
+            if (patch.City != null)
+                intent.City = patch.City;
+            if (patch.Country != null)
+                intent.Country = patch.Country;
+            if (patch.Category != null)
+                intent.Category = patch.Category;
+            if (patch.MccList != null)
+                intent.MccCodes = patch.MccList ?? new List<string>();
+            if (patch.RequiredInvoiceProve.HasValue)
+                intent.RequiredInvoiceProve = patch.RequiredInvoiceProve.Value;
+
+            await _client.From<Intent>().Update(intent);
+
+            var after = JsonSerializer.Serialize(new
+            {
+                intent.Description,
+                intent.City,
+                intent.Country,
+                intent.Category,
+                intent.MccCodes,
+                intent.RequiredInvoiceProve
+            });
+
+            var card = await _client.From<VirtualCard>().Where(x => x.IntentId == intentId).Single();
+            var now = DateTime.UtcNow;
+            await _audit.InsertAsync(new AuditLog
+            {
+                CardId = card?.Id ?? 0,
+                EntityId = intentId,
+                Action = "intent_updated",
+                Decision = "info",
+                Reason = "Intent metadata updated",
+                ResponseData = JsonSerializer.Serialize(new { before, after, actingUserId }),
+                TransactionAmount = 0,
+                CreatedAt = now,
+                OccurredAt = now
+            });
+
+            return await GetIntentDetailAsync(intentId, actingUserId);
+        }
+
+        public async Task<UserTransactionsResponse> GetUserTransactionsAsync(int userId, int limit = 50, int offset = 0)
+        {
+            limit = Math.Clamp(limit, 1, 1000);
+            offset = Math.Max(0, offset);
+
+            var filters = new List<IPostgrestQueryFilter>
+            {
+                new Supabase.Postgrest.QueryFilter("creator_id", Operator.Equals, userId),
+                new Supabase.Postgrest.QueryFilter("receiver_id", Operator.Equals, userId)
+            };
+
+            var cardsResp = await _client.From<RichIntentCardView>().Or(filters).Get();
+            var cardIds = (cardsResp.Models ?? new List<RichIntentCardView>())
+                .Select(x => x.CardId)
+                .Distinct()
+                .ToList();
+
+            if (cardIds.Count == 0)
+            {
+                return new UserTransactionsResponse
+                {
+                    UserId = userId,
+                    Total = 0,
+                    Limit = limit,
+                    Offset = offset,
+                    Logs = new List<AuditLogDto>()
+                };
+            }
+
+            var logFilters = cardIds
+                .Select<int, IPostgrestQueryFilter>(id => new Supabase.Postgrest.QueryFilter("card_id", Operator.Equals, id))
+                .ToList();
+
+            var countResp = await _client.From<AuditLog>().Or(logFilters).Get();
+            var total = countResp.Models?.Count ?? 0;
+
+            var logsResp = await _client.From<AuditLog>()
+                .Or(logFilters)
+                .Order("created_at", Ordering.Descending)
+                .Limit(limit)
+                .Offset(offset)
+                .Get();
+
+            var logs = (logsResp.Models ?? new List<AuditLog>()).Select(l => l.ToDto()).ToList();
+
+            return new UserTransactionsResponse
+            {
+                UserId = userId,
+                Total = total,
+                Limit = limit,
+                Offset = offset,
+                Logs = logs
+            };
         }
 
         private bool IsMccAllowed(List<string>? allowedCodes, string incomingMcc)

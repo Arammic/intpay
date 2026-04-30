@@ -38,6 +38,9 @@ public class VirtualCard : BaseModel
     [Column("card_cvv")]
     public string? CardCvv { get; set; }
 
-    [Column("is_locked")]
-    public bool IsLocked { get; set; } = false;
+    [Column("is_locked_by_pending_invoice")]
+    public bool IsLockedByPendingInvoice { get; set; }
+
+    [Column("is_manually_frozen")]
+    public bool IsManuallyFrozen { get; set; }
 }
