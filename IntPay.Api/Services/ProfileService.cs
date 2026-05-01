@@ -24,7 +24,7 @@ public class ProfileService
         _access = access;
     }
 
-    /// <summary>Sum of <c>remaining_amount</c> for active intents created by <paramref name="userId"/> (single source of truth with <see cref="IntPayService"/> sync).</summary>
+    /// <summary>Sum of <c>remaining_amount</c> for active <b>self-funded</b> intents (creator = receiver) with an active virtual card — aligned with <see cref="IntPayService"/> sync.</summary>
     public Task<decimal> CalculateTotalActiveCommitments(int userId) =>
         _commitmentQuery.SumRemainingAmountForActiveIntentsByCreatorId(userId);
     public async Task<HomeSummaryResponse> GetHomeSummary(int userId)

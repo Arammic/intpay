@@ -9,6 +9,7 @@ The C# host calls `create_intent_with_card_atomic` via Supabase RPC. The functio
 2. **Intent + card creation**
    - Inserts `intents` and `virtual_cards` in one transaction; rolls back on any failure.
    - Initializes `virtual_cards.is_locked_by_pending_invoice` and `is_manually_frozen` to `false` unless product rules say otherwise for new cards.
+   - Sets `virtual_cards.status` to **`active`** or **`inactive`** only (matches DB CHECK); default new cards to **`active`** unless product rules say otherwise.
 
 3. **Rounding**
    - Uses a fixed scale (e.g. 2 decimal places) when comparing or moving money, aligned with the API `Money` helper.

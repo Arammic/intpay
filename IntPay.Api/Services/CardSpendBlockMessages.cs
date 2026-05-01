@@ -8,4 +8,7 @@ public static class CardSpendBlockMessages
 
     public const string ManualFreeze =
         "Transaction declined: this card has been frozen by the sender or recipient.";
+
+    public const string InactiveLifecycle =
+        "Transaction declined: this card is inactive.";
 }

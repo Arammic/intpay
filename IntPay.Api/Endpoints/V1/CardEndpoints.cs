@@ -89,6 +89,43 @@ public static class CardEndpoints
             })
             .WithName("SetCardLockState");
 
+        api.MapPost("/cards/{cardId:int}/lifecycle-status", async (int cardId, SetCardLifecycleStatusRequest? body, IntPayService service) =>
+            {
+                try
+                {
+                    body = body ?? throw new ArgumentException("Request body is required.");
+                    if (body.ActingUserId <= 0)
+                        return Results.Json(new { success = false, message = "ActingUserId must be a positive profile id." }, statusCode: 400);
+
+                    var data = await service.SetVirtualCardLifecycleStatusAsync(cardId, body.Status, body.ActingUserId);
+
+                    return Results.Json(new
+                    {
+                        success = true,
+                        message = "Virtual card lifecycle status updated successfully.",
+                        data,
+                        meta = new { statusCode = 200, version = "v1", timestamp = DateTimeOffset.UtcNow.ToString("O") }
+                    }, statusCode: 200);
+                }
+                catch (KeyNotFoundException knf)
+                {
+                    return Results.Json(new { success = false, message = knf.Message }, statusCode: 404);
+                }
+                catch (UnauthorizedAccessException ua)
+                {
+                    return Results.Json(new { success = false, message = ua.Message }, statusCode: 403);
+                }
+                catch (ArgumentException ax)
+                {
+                    return Results.Json(new { success = false, message = ax.Message }, statusCode: 400);
+                }
+                catch (Exception ex)
+                {
+                    return Results.Problem(detail: ex.Message, statusCode: 400);
+                }
+            })
+            .WithName("SetCardLifecycleStatus");
+
         api.MapPost("/cards/{cardId:int}/request-refund", async (int cardId, RequestRefundBody? body, IntPayService service) =>
             {
                 try
