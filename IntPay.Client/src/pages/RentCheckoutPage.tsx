@@ -1,6 +1,13 @@
 import { useMemo, useRef, useState } from "react";
 import { Download, Home, Lock, ShieldCheck, XCircle } from "lucide-react";
+import { simulateTapToPay } from "@/api/simulateTap";
 import { useCurrentUserContext } from "@/lib/currentUserContext";
+
+/**
+ * Rent checkout at /rent-checkout. Uses the same tap-to-pay simulation API as
+ * Amazon checkout: amount and card come from the form; approval/decline follows
+ * backend intent rules.
+ */
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("en-US", {
@@ -18,8 +25,6 @@ const ZIP = "92101";
 const PROPERTY_ADDRESS = "1450 Front St, Unit 1208";
 const TAP_IMAGE =
   "https://tempfile.aiquickdraw.com/workers/nano/image_1777654503395_igtaz6.png";
-const MOCK_RENT_AMOUNT = 2450;
-const MOCK_CARD_DIGITS = "4111275871351897";
 
 export default function RentCheckoutPage() {
   const { profile } = useCurrentUserContext();
@@ -42,7 +47,8 @@ export default function RentCheckoutPage() {
   const validAmount = Number.isFinite(amount) && amount > 0;
   const cardDigits = cardNumber.replace(/\D/g, "");
   const cardValid = cardDigits.length === 16;
-  const mockedLast4 = MOCK_CARD_DIGITS.slice(-4);
+  const last4 = cardValid ? cardDigits.slice(-4) : "----";
+  const paidAmount = validAmount ? Number(amount.toFixed(2)) : 0;
   const invoiceId = useMemo(
     () => `RNT-${Math.floor(100000 + Math.random() * 900000)}`,
     [],
@@ -64,14 +70,36 @@ export default function RentCheckoutPage() {
 
   const payRent = async () => {
     setCardTouched(true);
+    if (!cardValid) {
+      setError("Please enter your 16-digit IntPay card number.");
+      return;
+    }
+    if (!validAmount) {
+      setError("Please enter a valid rent amount greater than zero.");
+      return;
+    }
     setPlacing(true);
     setError(null);
     setResult(null);
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    setInvoiceOpen(false);
+    const res = await simulateTapToPay({
+      cardNumber: cardDigits,
+      amount: paidAmount,
+      merchantName: MERCHANT,
+      mcc: MCC,
+      city: CITY,
+      country: COUNTRY,
+    });
     setPlacing(false);
-
-    const mockApproved = { approved: true, reason: "Approved (mock rent flow)" };
-    setResult(mockApproved);
+    if (!res.isSucess || !res.data) {
+      setError(res.error[0] ?? "Something went wrong");
+      return;
+    }
+    setResult(res.data);
+    if (!res.data.approved) {
+      setError(res.data.reason || "Declined");
+      return;
+    }
     setInvoiceOpen(true);
   };
 
@@ -150,9 +178,9 @@ export default function RentCheckoutPage() {
             Pay monthly rent with your IntPay card
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-slate-600">
-            This mock checkout simulates a landlord payment authorization through
-            IntPay smart intent rules. If approved, you can download a rent
-            invoice image immediately.
+            Pay your landlord through IntPay tap-to-pay authorization. Amount and
+            card are sent to the API; approval follows your card intent rules. If
+            approved, you can download a rent invoice image immediately.
           </p>
 
           <div className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -235,7 +263,8 @@ export default function RentCheckoutPage() {
           </div>
 
           <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-            Paying with card ending in <strong>{mockedLast4}</strong> at {MERCHANT} ({CITY}, {COUNTRY})
+            Paying with card ending in <strong>{last4}</strong> at {MERCHANT} ({CITY},{" "}
+            {COUNTRY}) · MCC {MCC}
           </div>
 
           <button
@@ -311,7 +340,7 @@ export default function RentCheckoutPage() {
                   <tr className="border-b border-slate-100">
                     <td className="py-2">Monthly rent payment (Unit 1208)</td>
                     <td className="py-2 text-right tabular-nums font-semibold">
-                      {fmt(MOCK_RENT_AMOUNT)}
+                      {fmt(paidAmount)}
                     </td>
                   </tr>
                 </tbody>
@@ -319,14 +348,14 @@ export default function RentCheckoutPage() {
                   <tr>
                     <td className="pt-3 text-right font-semibold">Total paid</td>
                     <td className="pt-3 text-right font-bold tabular-nums text-rose-700">
-                      {fmt(MOCK_RENT_AMOUNT)}
+                      {fmt(paidAmount)}
                     </td>
                   </tr>
                 </tfoot>
               </table>
 
               <div className="mt-4 rounded border border-emerald-300 bg-emerald-50 p-2 text-[11px] text-emerald-700">
-                ✓ Authorized with IntPay card •••• {mockedLast4} · Status: {result.reason}
+                ✓ Authorized with IntPay card •••• {last4} · Status: {result.reason}
               </div>
               <p className="mt-2 text-[11px] text-slate-500">
                 Due date: {dueDate.toLocaleDateString("en-US")} · Payment location: {CITY}, {STATE} {ZIP}
