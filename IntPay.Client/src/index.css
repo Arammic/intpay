@@ -1,0 +1,327 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Intent Pay Design System — dark theme, semantic tokens. All colors HSL. */
+
+@layer base {
+  :root,
+  .dark {
+    /* Surfaces */
+    --background: 240 18% 8%;
+    --foreground: 0 0% 98%;
+
+    --card: 240 16% 11%;
+    --card-foreground: 0 0% 98%;
+
+    --surface: 240 14% 14%;
+    --surface-foreground: 0 0% 98%;
+
+    --popover: 240 16% 11%;
+    --popover-foreground: 0 0% 98%;
+
+    /* Primary — Purple #8B5CF6 */
+    --primary: 258 90% 66%;
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 258 90% 66% / 0.18;
+
+    /* Secondary — Green #10B981 */
+    --secondary: 160 84% 39%;
+    --secondary-foreground: 0 0% 100%;
+    --secondary-soft: 160 84% 39% / 0.18;
+
+    /* Tertiary — Orange #B06B00 */
+    --tertiary: 37 100% 35%;
+    --tertiary-foreground: 0 0% 100%;
+    --tertiary-soft: 37 100% 35% / 0.20;
+
+    /* Neutral — #7A7680 */
+    --neutral: 252 4% 49%;
+    --neutral-foreground: 0 0% 100%;
+
+    --muted: 240 10% 18%;
+    --muted-foreground: 252 6% 65%;
+
+    --accent: 258 90% 66%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 75% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 12% 20%;
+    --input: 240 12% 18%;
+    --ring: 258 90% 66%;
+
+    --radius: 1rem;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(258 90% 66%), hsl(268 90% 58%));
+    --gradient-secondary: linear-gradient(135deg, hsl(160 84% 39%), hsl(170 84% 35%));
+    --gradient-tertiary: linear-gradient(135deg, hsl(37 100% 45%), hsl(25 95% 40%));
+    --gradient-card-purple: linear-gradient(135deg, hsl(258 90% 66%) 0%, hsl(280 80% 45%) 60%, hsl(240 18% 12%) 100%);
+    --gradient-card-green: linear-gradient(135deg, hsl(160 84% 39%) 0%, hsl(180 70% 30%) 60%, hsl(240 18% 12%) 100%);
+    --gradient-card-orange: linear-gradient(135deg, hsl(37 100% 45%) 0%, hsl(20 90% 35%) 60%, hsl(240 18% 12%) 100%);
+    --gradient-card-neutral: linear-gradient(135deg, hsl(252 8% 40%) 0%, hsl(240 10% 20%) 60%, hsl(240 18% 12%) 100%);
+    --gradient-hero: radial-gradient(ellipse at top, hsl(258 90% 66% / 0.25), transparent 60%);
+
+    /* Glass overlay tokens — used by base button styles */
+    --glass-bg: 0 0% 100% / 0.10;
+    --glass-bg-hover: 0 0% 100% / 0.15;
+    --glass-border: 0 0% 100% / 0.15;
+    --glass-border-hover: 0 0% 100% / 0.25;
+
+    /* Shadows */
+    --shadow-glow-primary: 0 10px 40px -10px hsl(258 90% 66% / 0.5);
+    --shadow-glow-secondary: 0 10px 40px -10px hsl(160 84% 39% / 0.4);
+    --shadow-card: 0 20px 50px -20px hsl(240 30% 2% / 0.8);
+
+    /* Motion */
+    --transition-base: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-spring: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+    /* Sidebar (kept for shadcn compat) */
+    --sidebar-background: 240 16% 11%;
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 258 90% 66%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 12% 16%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 240 12% 20%;
+    --sidebar-ring: 258 90% 66%;
+  }
+
+  /* ============== LIGHT MODE ============== */
+  .light {
+    /* Soft, airy surfaces inspired by reference mocks */
+    --background: 240 30% 98%;
+    --foreground: 240 22% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 22% 12%;
+
+    --surface: 240 25% 96%;
+    --surface-foreground: 240 22% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 22% 12%;
+
+    /* Brand kept identical */
+    --primary: 258 90% 60%;
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 258 90% 60% / 0.12;
+
+    --secondary: 160 84% 36%;
+    --secondary-foreground: 0 0% 100%;
+    --secondary-soft: 160 84% 36% / 0.12;
+
+    --tertiary: 37 100% 38%;
+    --tertiary-foreground: 0 0% 100%;
+    --tertiary-soft: 37 100% 38% / 0.15;
+
+    --neutral: 252 6% 45%;
+    --neutral-foreground: 0 0% 100%;
+
+    --muted: 240 20% 94%;
+    --muted-foreground: 240 8% 38%;
+
+    --accent: 258 90% 60%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 78% 52%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 15% 90%;
+    --input: 240 15% 92%;
+    --ring: 258 90% 60%;
+
+    /* Gradients tuned for light backdrops */
+    --gradient-primary: linear-gradient(135deg, hsl(258 90% 62%), hsl(268 90% 56%));
+    --gradient-secondary: linear-gradient(135deg, hsl(160 84% 38%), hsl(170 84% 34%));
+    --gradient-tertiary: linear-gradient(135deg, hsl(37 100% 48%), hsl(25 95% 42%));
+    --gradient-card-purple: linear-gradient(135deg, hsl(258 90% 62%) 0%, hsl(268 80% 45%) 70%, hsl(240 30% 18%) 100%);
+    --gradient-card-green: linear-gradient(135deg, hsl(160 84% 40%) 0%, hsl(170 75% 30%) 70%, hsl(190 40% 18%) 100%);
+    --gradient-card-orange: linear-gradient(135deg, hsl(37 100% 48%) 0%, hsl(20 90% 38%) 70%, hsl(15 50% 18%) 100%);
+    --gradient-card-neutral: linear-gradient(135deg, hsl(252 8% 50%) 0%, hsl(240 10% 30%) 70%, hsl(240 20% 16%) 100%);
+    --gradient-hero: radial-gradient(ellipse at top, hsl(258 90% 70% / 0.18), transparent 60%);
+
+    /* Glass overlay → use ink instead of white in light mode */
+    --glass-bg: 240 22% 12% / 0.04;
+    --glass-bg-hover: 240 22% 12% / 0.08;
+    --glass-border: 240 15% 80% / 1;
+    --glass-border-hover: 258 90% 60% / 0.5;
+
+    --shadow-glow-primary: 0 10px 40px -12px hsl(258 90% 60% / 0.35);
+    --shadow-glow-secondary: 0 10px 40px -12px hsl(160 84% 36% / 0.30);
+    --shadow-card: 0 20px 50px -28px hsl(240 30% 30% / 0.30);
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 240 22% 12%;
+    --sidebar-primary: 258 90% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 25% 96%;
+    --sidebar-accent-foreground: 240 22% 12%;
+    --sidebar-border: 240 15% 90%;
+    --sidebar-ring: 258 90% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  button {
+    border: 1px solid transparent;
+    background-color: transparent;
+    transition: var(--transition-base);
+  }
+  /* Opt-in glass button via .btn-glass utility — replaces the old global look */
+  .btn-glass {
+    border: 1px solid hsl(var(--glass-border));
+    background-color: hsl(var(--glass-bg));
+    backdrop-filter: blur(8px);
+    box-shadow: 0 6px 18px -10px hsl(240 30% 10% / 0.25);
+  }
+  .btn-glass:hover {
+    border-color: hsl(var(--glass-border-hover));
+    background-color: hsl(var(--glass-bg-hover));
+  }
+  html, body, #root {
+    @apply bg-background text-foreground;
+    min-height: 100vh;
+  }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background-image: var(--gradient-hero);
+    background-attachment: fixed;
+  }
+  h1, h2, h3, h4, h5 {
+    font-family: 'Inter', sans-serif;
+    letter-spacing: -0.02em;
+  }
+  .font-label {
+    font-family: 'Space Grotesk', sans-serif;
+    letter-spacing: 0.02em;
+  }
+}
+
+@layer utilities {
+  .bg-gradient-primary { background-image: var(--gradient-primary); }
+  .bg-gradient-secondary { background-image: var(--gradient-secondary); }
+  .bg-gradient-tertiary { background-image: var(--gradient-tertiary); }
+  .bg-card-purple { background-image: var(--gradient-card-purple); }
+  .bg-card-green { background-image: var(--gradient-card-green); }
+  .bg-card-orange { background-image: var(--gradient-card-orange); }
+  .bg-card-neutral { background-image: var(--gradient-card-neutral); }
+  .shadow-glow-primary { box-shadow: var(--shadow-glow-primary); }
+  .shadow-glow-secondary { box-shadow: var(--shadow-glow-secondary); }
+  .shadow-card { box-shadow: var(--shadow-card); }
+  .transition-base { transition: var(--transition-base); }
+  .transition-spring { transition: var(--transition-spring); }
+}
+
+/* Card chip pattern */
+.card-chip {
+  background: linear-gradient(135deg, #d4a418, #f3d676 30%, #b08509 60%, #f3d676);
+  border-radius: 6px;
+}
+.card-chip::before {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 100%;
+  background:
+    linear-gradient(90deg, transparent 30%, rgba(0,0,0,0.25) 30%, rgba(0,0,0,0.25) 32%, transparent 32%, transparent 65%, rgba(0,0,0,0.25) 65%, rgba(0,0,0,0.25) 67%, transparent 67%),
+    linear-gradient(0deg, transparent 30%, rgba(0,0,0,0.25) 30%, rgba(0,0,0,0.25) 32%, transparent 32%, transparent 65%, rgba(0,0,0,0.25) 65%, rgba(0,0,0,0.25) 67%, transparent 67%);
+  border-radius: 6px;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.08), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2.2s infinite;
+}
+
+@keyframes loader-float {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-4px) scale(1.03);
+  }
+}
+
+@keyframes loader-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes loader-pulse {
+  0%, 100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+.loader-logo {
+  animation: loader-float 1.8s ease-in-out infinite;
+}
+
+.loader-orbit {
+  animation: loader-spin 3.6s linear infinite;
+}
+
+.loader-glow {
+  animation: loader-pulse 1.8s ease-in-out infinite;
+}
+
+.loader-ring {
+  border-style: solid;
+  animation: loader-spin 0.9s linear infinite;
+}
+
+.loader-halo {
+  animation: loader-pulse 1.8s ease-in-out infinite;
+}
+
+/* Apple-style thin scrollbars — applied globally and via .scrollbar-apple utility */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--foreground) / 0.18) transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--foreground) / 0.18);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--foreground) / 0.32);
+  background-clip: padding-box;
+}
+.scrollbar-apple {
+  scrollbar-width: thin;
+}
+.scrollbar-apple::-webkit-scrollbar {
+  height: 4px;
+  width: 4px;
+}
+.scrollbar-apple::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--foreground) / 0.15);
+}

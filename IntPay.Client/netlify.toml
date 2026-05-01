@@ -1,0 +1,28 @@
+[build.environment]
+  # Admin emails are also public contact data (profile.json, CV). Netlify otherwise flags
+  # VITE_* values that appear in the repo. See: https://ntl.fyi/configure-secrets-scanning
+  SECRETS_SCAN_OMIT_KEYS = "VITE_ADMIN_EMAIL_1,VITE_ADMIN_EMAIL_2"
+
+# ---------------------------------------------------------------------------
+# API proxy
+# ---------------------------------------------------------------------------
+# The frontend is served over HTTPS but the backend runs on HTTP, which the
+# browser would block as mixed content. Netlify proxies the request server-side
+# so the browser only ever sees same-origin HTTPS calls to /api/*.
+#
+# IMPORTANT: This rule MUST come BEFORE the SPA fallback rule below, otherwise
+# /api/* would be rewritten to /index.html.
+[[redirects]]
+  from = "/api/*"
+  to = "http://intpay.runasp.net/api/v1/:splat"
+  status = 200
+  force = true
+
+# ---------------------------------------------------------------------------
+# SPA fallback
+# ---------------------------------------------------------------------------
+# Catch-all so client-side routes (React Router) work on hard refresh.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
