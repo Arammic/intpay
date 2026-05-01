@@ -1,0 +1,10 @@
+project_id = "vsszxosbdjmhpmyollyf"
+
+[functions.intent-agent]
+verify_jwt = false
+
+[functions.intent-extract]
+verify_jwt = false
+
+[functions.intpay-assist]
+verify_jwt = false
