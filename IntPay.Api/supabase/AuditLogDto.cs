@@ -3,7 +3,7 @@ namespace IntPay.Api.supabase.Models
   public record AuditLogDto
     {
         public int Id { get; init; }
-        public int CardId { get; init; }
+        public int? CardId { get; init; }
         public decimal TransactionAmount { get; init; }
         public string? MerchantName { get; init; }
         public string? Mcc { get; init; }
@@ -15,8 +15,6 @@ namespace IntPay.Api.supabase.Models
         public string? ExternalId { get; init; } // إن أضفت حقل للـ idempotency
         public int? EntityId { get; init; }
         public string? Action { get; init; }
-        /// <summary>JSON string from response_data (jsonb).</summary>
-        public string? ResponseData { get; init; }
         public DateTime? OccurredAt { get; init; }
     }
     public static class AuditLogMapping
@@ -34,11 +32,11 @@ namespace IntPay.Api.supabase.Models
       City = src.City,
       EntityId = src.EntityId,
       Action = src.Action,
-      ResponseData = src.ResponseData,
       OccurredAt = src.OccurredAt,
       // Country و ExternalId: ضعها فقط إذا موجودة فعلاً في نموذج AuditLog
       Country = GetPropertyValue<string?>(src, "Country"),
-      ExternalId = GetPropertyValue<string?>(src, "external_id")
+      ExternalId = GetPropertyValue<string?>(src, "external_id"),
+    
     };
 
     private static T? GetPropertyValue<T>(object obj, string propName)

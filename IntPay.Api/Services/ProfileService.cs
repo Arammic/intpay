@@ -8,21 +8,25 @@ namespace IntPay.Api.Services;
 public class ProfileService
 {
     private readonly Supabase.Client _client;
+    private readonly IAuditLogWriter _audit;
+    private readonly ActiveIntentCommitmentQuery _commitmentQuery;
+    private readonly ResourceAccessService _access;
 
-    public ProfileService(Supabase.Client client) => _client = client;
-    // This method calculates the real-time 'LockMoney' for the UI view
-    public async Task<decimal> CalculateTotalActiveCommitments(int userId)
+    public ProfileService(
+        Supabase.Client client,
+        IAuditLogWriter audit,
+        ActiveIntentCommitmentQuery commitmentQuery,
+        ResourceAccessService access)
     {
-        // Fetch all intents where the user is the creator and status is active
-        // This covers both 'self' (creator == receiver) and 'sent' (creator != receiver)
-        var response = await _client.From<Intent>()
-            .Where(x => x.CreatorId == userId)
-            .Where(x => x.Status == "active")
-            .Get();
-
-        // Sum the remaining_amount column
-        return response.Models.Sum(x => x.RemainingAmount);
+        _client = client;
+        _audit = audit;
+        _commitmentQuery = commitmentQuery;
+        _access = access;
     }
+
+    /// <summary>Sum of <c>remaining_amount</c> for active intents created by <paramref name="userId"/> (single source of truth with <see cref="IntPayService"/> sync).</summary>
+    public Task<decimal> CalculateTotalActiveCommitments(int userId) =>
+        _commitmentQuery.SumRemainingAmountForActiveIntentsByCreatorId(userId);
     public async Task<HomeSummaryResponse> GetHomeSummary(int userId)
     {
         // 1. Parallel fetch for Profile and ALL rich card data
@@ -40,6 +44,8 @@ public class ProfileService
             .Get();
 
         await Task.WhenAll(profileTask, cardsTask);
+
+        var lockMoney = await _commitmentQuery.SumRemainingAmountForActiveIntentsByCreatorId(userId);
 
         var selfItems = new List<IntentWithCardResponse>();
         var receivedItems = new List<IntentWithCardResponse>();
@@ -61,7 +67,7 @@ public class ProfileService
         return new HomeSummaryResponse
         {
             FreeMoney = profileTask.Result?.VaultBalance ?? 0,
-            LockMoney = profileTask.Result?.LockMoney ?? 0,
+            LockMoney = lockMoney,
             TotalActivityCount = cardsTask.Result.Models.Count,
             SelfCards = new CardSection { Items = selfItems },
             ReceivedCards = new CardSection { Items = receivedItems },
@@ -105,7 +111,11 @@ public class ProfileService
         profile.VaultBalance += amount;
 
         var response = await _client.From<Profile>().Update(profile);
-        return response.Model ?? throw new InvalidOperationException("Failed to update profile vault balance.");
+        var model = response.Model ?? throw new InvalidOperationException("Failed to update profile vault balance.");
+
+        // Vault audit row is written by DB trigger trg_profiles_vault_business_audit (balance_added / balance_deducted).
+
+        return model;
     }
 
     /// <summary>
@@ -166,40 +176,60 @@ public class ProfileService
         };
     }
 
-    public async Task<PagedAuditLogsResponse> GetAuditLogsByCardId(int cardId, int limit = 50, int offset = 0)
-{
-    limit = Math.Clamp(limit, 1, 1000);
-    offset = Math.Max(0, offset);
-
-    // Count total (اختياري)
-    var countResp = await _client.From<AuditLog>()
-        .Where(x => x.CardId == cardId)
-        .Get();
-    var total = countResp.Models?.Count ?? 0;
-
-    // Fetch paged logs
-    var logsResp = await _client.From<AuditLog>()
-        .Where(x => x.CardId == cardId)
-        .Order("created_at", Ordering.Descending)
-        .Limit(limit)
-        .Offset(offset)
-        .Get();
-
-    var logs = logsResp.Models ?? new List<AuditLog>();
-
-    // Map to DTOs to avoid serializing BaseModel metadata
-    var dtoList = logs.Select(l => l.ToDto()).ToList();
-
-    return new PagedAuditLogsResponse
+    public async Task<PagedAuditLogsResponse> GetAuditLogsByCardId(
+        int cardId,
+        int actingUserId,
+        int limit = 50,
+        int offset = 0,
+        string? decision = null,
+        DateTime? fromUtc = null,
+        DateTime? toUtc = null)
     {
-        CardId = cardId,
-        Total = total,
-        Limit = limit,
-        Offset = offset,
-        Logs = dtoList 
-    };
-}
+        // Sender/recipient privacy boundary: audit logs reveal transaction behavior and must be scoped to participants.
+        await _access.EnsureCanAccessCardAsync(cardId, actingUserId);
 
+        limit = Math.Clamp(limit, 1, 1000);
+        offset = Math.Max(0, offset);
+
+        var countQuery = _client.From<AuditLog>().Where(x => x.CardId == cardId);
+        if (!string.IsNullOrWhiteSpace(decision))
+            countQuery = countQuery.Filter("decision", Operator.Equals, decision.Trim());
+        if (fromUtc.HasValue)
+            countQuery = countQuery.Filter("created_at", Operator.GreaterThanOrEqual, fromUtc.Value.ToUniversalTime().ToString("O"));
+        if (toUtc.HasValue)
+            countQuery = countQuery.Filter("created_at", Operator.LessThanOrEqual, toUtc.Value.ToUniversalTime().ToString("O"));
+
+        var countResp = await countQuery.Get();
+        var total = countResp.Models?.Count ?? 0;
+
+        var logsQuery = _client.From<AuditLog>().Where(x => x.CardId == cardId);
+        if (!string.IsNullOrWhiteSpace(decision))
+            logsQuery = logsQuery.Filter("decision", Operator.Equals, decision.Trim());
+        if (fromUtc.HasValue)
+            logsQuery = logsQuery.Filter("created_at", Operator.GreaterThanOrEqual, fromUtc.Value.ToUniversalTime().ToString("O"));
+        if (toUtc.HasValue)
+            logsQuery = logsQuery.Filter("created_at", Operator.LessThanOrEqual, toUtc.Value.ToUniversalTime().ToString("O"));
+
+        var logsResp = await logsQuery
+            .Order("created_at", Ordering.Descending)
+            .Limit(limit)
+            .Offset(offset)
+            .Get();
+
+        var logs = logsResp.Models ?? new List<AuditLog>();
+        var dtoList = logs.Select(l => l.ToDto()).ToList();
+
+        return new PagedAuditLogsResponse
+        {
+            CardId = cardId,
+            Total = total,
+            Limit = limit,
+            Offset = offset,
+            Logs = dtoList
+        };
+    }
+
+    /// <summary>Reserved for future wallet-to-lock transfers; not invoked by current HTTP routes.</summary>
     public async Task<Profile> MoveToLockedBalance(int profileId, decimal amount, decimal fee)
     {
         var profile = await GetById(profileId);
@@ -328,6 +358,10 @@ public async Task<List<object>> SearchProfilesByName(string name)
                 StripeId = view.StripeCardId,
                 CreatedAt = view.CreatedAt,
                 Status = view.Status,
+                IsLockedByPendingInvoice = view.IsLockedByPendingInvoice,
+                IsManuallyFrozen = view.IsManuallyFrozen,
+                IsSpendBlocked = view.IsLockedByPendingInvoice || view.IsManuallyFrozen,
+                IsRequestRefund = view.IsRequestRefund,
 
                 // Physical Details
                 CardNumber = view.CardNumber,
@@ -337,8 +371,8 @@ public async Task<List<object>> SearchProfilesByName(string name)
                 ExpiryMonth = view.ExpMonth,
                 ExpiryYear = view.ExpYear,
                 CardholderName = view.CardholderName,
-                UsesLeft = (short)view.UsesLeft,
-                UseTimes = (short)view.UseTimes,
+                UsesLeft = view.UsesLeft,
+                UseTimes = view.UseTimes,
                 // Financials
                 Amount = view.Amount,
                 RemainingAmount = view.RemainingAmount,

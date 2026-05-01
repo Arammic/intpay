@@ -1,0 +1,2881 @@
+openapi: 3.0.3
+info:
+  title: IntPay API
+  version: 1.0.0
+  description: |
+    OpenAPI documentation for IntPay API v1.
+
+    The current implementation uses explicit caller identifiers (`userId`, `profileId`, or `actingUserId`) as a temporary request-level authorization boundary. JWT/session authentication is not enforced by the API yet.
+
+    In the current MVP, authorized card GET responses may include the full card PAN (`cardNumber`) and CVV (`cvv`) for demo flows. Production deployments should re-enable masking, secret handling, and real authentication.
+
+    `useTimes` is optional when creating an intent. If the client omits it or sends `null`, the API treats the intent as unlimited. The current numeric sentinel for unlimited usage is `99999`; API consumers should display this as `unlimited`.
+
+    In Development, `MapOpenApi()` still exposes generated JSON (e.g. `/openapi/v1.json`). Scalar is configured to load this hand-maintained YAML from `/openapi/intpay-v1.yaml` (same contents as `docs/openapi-v1.yaml` on disk) so examples and long descriptions appear in the UI. Keep this file aligned with `Endpoints/V1` when behavior changes.
+servers:
+  - url: /api/v1
+    description: API v1 relative server
+tags:
+  - name: Profiles
+    description: Profile, wallet, and public profile discovery endpoints.
+  - name: Home
+    description: Home dashboard summary endpoints.
+  - name: Intents
+    description: Intent creation, retrieval, and metadata update endpoints.
+  - name: Cards
+    description: Virtual card retrieval, audit logs, and manual freeze controls.
+  - name: Users
+    description: User-level metrics, activity feeds, transactions, and receiver logs.
+  - name: Verification
+    description: Invoice verification endpoints.
+  - name: Simulation
+    description: Payment simulation endpoints.
+
+paths:
+  /profiles/{id}:
+    get:
+      tags: [Profiles]
+      summary: Get profile details
+      description: Returns a profile, computed locked money, contacts, profile link, and mock points.
+      operationId: getProfileFullResponse
+      parameters:
+        - $ref: '#/components/parameters/ProfileIdPath'
+      responses:
+        '200':
+          description: Profile fetched successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileFullEnvelope'
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: Profile fetched successfully.
+                    data:
+                      id: 1
+                      name: Mohammed Fares
+                      username: mohammed
+                      email: mohammed@example.com
+                      vaultBalance: 12000.0
+                      lockMoney: 2500.0
+                      link: https://intentpay.app/u/1
+                      contacts:
+                        - id: 2
+                          name: Aisha Saleh
+                          email: aisha@example.com
+                          username: aisha
+                          link: https://intentpay.app/u/2
+                      points: 11
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /profiles/{userId}/add-funds:
+    post:
+      tags: [Profiles]
+      summary: Add funds to a profile vault
+      description: Credits a user's `vault_balance` and writes a wallet credit audit event.
+      operationId: addFunds
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddFundsRequest'
+            examples:
+              addFunds:
+                value:
+                  amount: 500.0
+      responses:
+        '200':
+          description: Funds added successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileBalanceEnvelope'
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: Funds added successfully.
+                    data:
+                      id: 1
+                      name: Mohammed Fares
+                      username: mohammed
+                      email: mohammed@example.com
+                      vaultBalance: 12500.0
+                      lockMoney: 2500.0
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /profiles/search:
+    get:
+      tags: [Profiles]
+      summary: Search profiles by name
+      description: Performs a case-insensitive profile name search and returns limited public profile discovery fields.
+      operationId: searchProfilesByName
+      parameters:
+        - name: name
+          in: query
+          required: true
+          description: Case-insensitive profile name search term. Must not be empty.
+          schema:
+            type: string
+          example: Mohammed
+      responses:
+        '200':
+          description: Matching profiles returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileSearchEnvelope'
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: Found 1 profile(s) matching 'Mohammed'.
+                    data:
+                      - id: 1
+                        name: Mohammed Fares
+                        username: mohammed
+                        email: mohammed@example.com
+                        link: https://intentpay.app/u/1
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /home/summary/{user_id}:
+    get:
+      tags: [Home]
+      summary: Get home summary
+      description: Returns available money, locked money, activity count, and categorized card sections for a user.
+      operationId: getHomeSummary
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: User profile id.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+          example: 1
+      responses:
+        '200':
+          description: Home summary fetched successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeSummaryEnvelope'
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: Home summary fetched successfully.
+                    data:
+                      freeMoney: 9500.0
+                      lockMoney: 2500.0
+                      totalActivityCount: 12
+                      selfCards:
+                        items: []
+                        count: 0
+                      receivedCards:
+                        items: []
+                        count: 0
+                      sentCards:
+                        items: []
+                        count: 0
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /intents/create:
+    post:
+      tags: [Intents]
+      summary: Create intent with virtual card
+      description: Creates an intent and a linked virtual card through the database RPC `create_intent_with_card_atomic`.
+      operationId: createIntent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIntentRequest'
+            examples:
+              unlimitedUsageDefault:
+                summary: Omit useTimes to create an unlimited intent
+                value:
+                  creatorId: 1
+                  userId: 2
+                  amount: 750.0
+                  country: SA
+                  city: Riyadh
+                  description: Team travel allowance
+                  mccList: ['4121', '7011']
+                  requiredInvoiceProve: true
+              explicitFiniteUsage:
+                summary: Create a card with limited usage
+                value:
+                  creatorId: 1
+                  userId: 2
+                  amount: 150.0
+                  useTimes: 3
+                  country: UAE
+                  city: Dubai
+                  description: Conference meals
+                  mccList: ['5812']
+                  requiredInvoiceProve: false
+      responses:
+        '201':
+          description: Intent and virtual card created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateIntentResponse'
+              examples:
+                success:
+                  value:
+                    data:
+                      intentId: 21
+                      city: Riyadh
+                      country: SA
+                      description: Team travel allowance
+                      mccList:
+                        - code: '4121'
+                          name: Taxis & Rideshare
+                          group: Transport
+                      requiredInvoiceProve: true
+                      card:
+                        id: 31
+                        stripeId: ic_1234567890abcdef1234
+                        createdAt: '2026-05-01T02:00:00Z'
+                        status: active
+                        isLockedByPendingInvoice: true
+                        isManuallyFrozen: false
+                        isSpendBlocked: true
+                        isRequestRefund: false
+                        cardNumber: '4111123412341234'
+                        last4: '1234'
+                        cvv: '123'
+                        expiryDate: 05/29
+                        expiryMonth: 5
+                        expiryYear: 2029
+                        cardholderName: Aisha Saleh
+                        amount: 750.0
+                        remainingAmount: 750.0
+                        useTimes: 99999
+                        usesLeft: 99999
+                        unLockedAt: '2026-05-01T02:00:00Z'
+                        minutesToUnlock: 0
+                        hoursToUnlock: 0
+                        daysToUnlock: 0
+                        timeRemainingLeveled: Available Now
+                        daysLocked: 0
+                        creatorId: 1
+                        retrieveId: 2
+                        type: sent
+                        senderName: null
+                    message: Intent and virtual card created successfully.
+                    status: 201
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /intents/{id}:
+    get:
+      tags: [Intents]
+      summary: Get intent by id
+      description: Returns a raw intent model plus the rich card response. The caller must be the creator or receiver.
+      operationId: getIntentById
+      parameters:
+        - $ref: '#/components/parameters/IntentIdPath'
+        - $ref: '#/components/parameters/ActingUserIdRequired'
+      responses:
+        '200':
+          description: Intent fetched successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentDetailEnvelope'
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: Intent fetched successfully.
+                    data:
+                      intentId: 21
+                      intent:
+                        id: 21
+                        creatorId: 1
+                        receiverId: 2
+                        amount: 750.0
+                        remainingAmount: 750.0
+                        useTimes: 99999
+                        usesLeft: 99999
+                        status: active
+                      card:
+                        id: 31
+                        cardNumber: '4111123412341234'
+                        cvv: '123'
+                        isSpendBlocked: true
+                      rich:
+                        intentId: 21
+                        city: Riyadh
+                        country: SA
+                        description: Team travel allowance
+                        mccList: []
+                        requiredInvoiceProve: true
+                        card:
+                          id: 31
+                          last4: '1234'
+                          useTimes: 99999
+                          usesLeft: 99999
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags: [Intents]
+      summary: Patch intent metadata
+      description: Updates whitelisted metadata only. Amount, remaining amount, use count, and remaining usage cannot be modified through this endpoint.
+      operationId: patchIntent
+      parameters:
+        - $ref: '#/components/parameters/IntentIdPath'
+        - $ref: '#/components/parameters/ActingUserIdRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchIntentRequest'
+            examples:
+              updateMetadata:
+                value:
+                  description: Updated travel allowance
+                  city: Jeddah
+                  country: SA
+                  mccList: ['4121', '5812']
+                  requiredInvoiceProve: false
+      responses:
+        '200':
+          description: Intent updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentDetailEnvelope'
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: Intent updated successfully.
+                    data:
+                      intentId: 21
+                      rich:
+                        intentId: 21
+                        city: Jeddah
+                        country: SA
+                        description: Updated travel allowance
+                        mccList:
+                          - code: '4121'
+                            name: Taxis & Rideshare
+                            group: Transport
+                        requiredInvoiceProve: false
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /cards/{cardId}:
+    get:
+      tags: [Cards]
+      summary: Get card with audit logs
+      description: Returns a rich card response and audit logs for a single card. The caller must be the creator or receiver.
+      operationId: getCardWithLogs
+      parameters:
+        - $ref: '#/components/parameters/CardIdPath'
+        - name: profileId
+          in: query
+          required: true
+          description: Caller profile id. Must be a positive integer and must belong to the card creator or receiver.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+          example: 1
+      responses:
+        '200':
+          description: Card fetched successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardWithLogsEnvelope'
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: Card fetched successfully.
+                    data:
+                      card:
+                        intentId: 21
+                        city: Riyadh
+                        country: SA
+                        mccList: []
+                        requiredInvoiceProve: true
+                        card:
+                          id: 31
+                          cardNumber: '4111123412341234'
+                          last4: '1234'
+                          cvv: '123'
+                          useTimes: 99999
+                          usesLeft: 99999
+                          isSpendBlocked: true
+                      logs: []
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /cards/{cardId}/logs:
+    get:
+      tags: [Cards]
+      summary: Get card audit logs
+      description: Returns paged audit logs for a card with optional decision and date filters.
+      operationId: getAuditLogsByCardId
+      parameters:
+        - $ref: '#/components/parameters/CardIdPath'
+        - $ref: '#/components/parameters/ActingUserIdRequired'
+        - $ref: '#/components/parameters/LimitOptional'
+        - $ref: '#/components/parameters/OffsetOptional'
+        - name: decision
+          in: query
+          required: false
+          description: Optional audit decision filter.
+          schema:
+            $ref: '#/components/schemas/DecisionStatus'
+          example: approved
+        - name: from
+          in: query
+          required: false
+          description: Inclusive created-at lower bound.
+          schema:
+            type: string
+            format: date-time
+          example: '2026-05-01T00:00:00Z'
+        - name: to
+          in: query
+          required: false
+          description: Inclusive created-at upper bound.
+          schema:
+            type: string
+            format: date-time
+          example: '2026-05-02T00:00:00Z'
+      responses:
+        '200':
+          description: Audit logs fetched successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedAuditLogsEnvelope'
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: Audit logs fetched successfully.
+                    data:
+                      cardId: 31
+                      total: 1
+                      limit: 20
+                      offset: 0
+                      logs:
+                        - id: 90
+                          cardId: 31
+                          transactionAmount: 25.5
+                          merchantName: Riyadh Taxi
+                          mcc: '4121'
+                          decision: approved
+                          reason: null
+                          createdAt: '2026-05-01T02:00:00Z'
+                          city: Riyadh
+                          entityId: 21
+                          action: authorization
+                          occurredAt: '2026-05-01T02:00:00Z'
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /cards/{cardId}/lock-state:
+    post:
+      tags: [Cards]
+      summary: Set card manual freeze state
+      description: Toggles manual freeze only. This endpoint does not change invoice-pending lock state.
+      operationId: setCardLockState
+      parameters:
+        - $ref: '#/components/parameters/CardIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetCardLockRequest'
+            examples:
+              freeze:
+                value:
+                  locked: true
+                  actingUserId: 1
+              unfreeze:
+                value:
+                  locked: false
+                  actingUserId: 1
+      responses:
+        '200':
+          description: Card manual freeze state updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardManualFreezeEnvelope'
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: Card manual freeze state updated successfully.
+                    data:
+                      cardId: 31
+                      isManuallyFrozen: true
+                      isLockedByPendingInvoice: false
+                      isRequestRefund: false
+                      isSpendBlocked: true
+                      previousManualFreeze: false
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /cards/{cardId}/request-refund:
+    post:
+      tags: [Cards]
+      summary: Record refund request on card
+      description: Sets is_request_refund on the virtual card (idempotent). Caller must be creator or receiver. Response contains no card payload.
+      operationId: requestCardRefund
+      parameters:
+        - $ref: '#/components/parameters/CardIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestRefundBody'
+            examples:
+              default:
+                value:
+                  actingUserId: 1
+      responses:
+        '200':
+          description: Refund request recorded successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundRequestRecordedEnvelope'
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: Refund request recorded successfully.
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /cards/by-user/{userId}/latest:
+    get:
+      tags: [Cards]
+      summary: Get latest card for user
+      description: Returns the latest card where the user is either creator or receiver.
+      operationId: getLatestCardForUser
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+      responses:
+        '200':
+          description: Latest card fetched successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentWithCardEnvelope'
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: Latest card fetched successfully.
+                    data:
+                      intentId: 21
+                      city: Riyadh
+                      country: SA
+                      mccList: []
+                      requiredInvoiceProve: false
+                      card:
+                        id: 31
+                        cardNumber: '4111123412341234'
+                        cvv: '123'
+                        useTimes: 99999
+                        usesLeft: 99999
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /cards/by-user/{userId}:
+    get:
+      tags: [Cards]
+      summary: Get cards for user
+      description: Returns paged cards where the user is creator or receiver.
+      operationId: getCardsForUser
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+        - $ref: '#/components/parameters/LimitOptional'
+        - $ref: '#/components/parameters/OffsetOptional'
+      responses:
+        '200':
+          description: Cards fetched successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedCardsEnvelope'
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: Cards fetched successfully.
+                    data:
+                      total: 1
+                      limit: 10
+                      offset: 0
+                      items:
+                        - intentId: 21
+                          city: Riyadh
+                          country: SA
+                          mccList: []
+                          requiredInvoiceProve: false
+                          card:
+                            id: 31
+                            last4: '1234'
+                            useTimes: 99999
+                            usesLeft: 99999
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /users/{userId}/dashboard/metrics:
+    get:
+      tags: [Users]
+      summary: Get dashboard metrics
+      description: Computes user dashboard aggregates across linked intents and cards.
+      operationId: getDashboardMetrics
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+      responses:
+        '200':
+          description: Dashboard metrics computed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardMetricsEnvelope'
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: Dashboard metrics computed successfully.
+                    data:
+                      userId: 1
+                      totalSpentApproved: 300.0
+                      totalIntentPrincipal: 2500.0
+                      totalRemainingAcrossIntents: 2200.0
+                      distinctIntentCount: 4
+                      distinctCardCount: 4
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /users/{userId}/activities/latest:
+    get:
+      tags: [Users]
+      summary: Get merged user activity feed
+      description: |
+        Merges card-scoped `audit_logs` (authorizations, manual freeze, invoice verification, intent updates) for every virtual card where the path user is creator or receiver,
+        with profile-scoped rows where `audit_logs.user_id` matches the path user (vault `balance_added`, `balance_deducted`, `wallet_credit`, and intent governance rows on the profile feed).
+
+        Each item exposes derived `entityType` and `outcome` for UI grouping. Use query `status` to filter by normalized outcome; use `decision` for the raw audit decision enum.
+      operationId: getLatestUserActivities
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+        - $ref: '#/components/parameters/LimitOptional'
+        - $ref: '#/components/parameters/OffsetOptional'
+        - name: decision
+          in: query
+          required: false
+          description: Filter by raw audit decision (`approved`, `declined`, `info`).
+          schema:
+            $ref: '#/components/schemas/DecisionStatus'
+          example: approved
+        - name: action
+          in: query
+          required: false
+          description: Filter by audit action (e.g. `authorization`, `balance_added`, `card_manual_freeze_set`, `intent_updated`).
+          schema:
+            type: string
+          example: authorization
+        - name: entityType
+          in: query
+          required: false
+          description: Filter by derived bucket applied in the API after fetch.
+          schema:
+            $ref: '#/components/schemas/ActivityEntityType'
+          example: transaction
+        - name: status
+          in: query
+          required: false
+          description: Filter by normalized outcome; echoed as `filters.outcome` in the response (query name is `status`, not `outcome`).
+          schema:
+            $ref: '#/components/schemas/ActivityOutcome'
+          example: success
+        - name: cardId
+          in: query
+          required: false
+          description: Filter by card id.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+          example: 31
+        - name: intentId
+          in: query
+          required: false
+          description: Filter by intent id.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+          example: 21
+        - name: from
+          in: query
+          required: false
+          description: Inclusive UTC lower bound for created time.
+          schema:
+            type: string
+            format: date-time
+          example: '2026-05-01T00:00:00Z'
+        - name: to
+          in: query
+          required: false
+          description: Inclusive UTC upper bound for created time.
+          schema:
+            type: string
+            format: date-time
+          example: '2026-05-02T00:00:00Z'
+        - name: merchant
+          in: query
+          required: false
+          description: Case-insensitive contains on merchant name; for profile-scoped rows, matches `note` or `reason`.
+          schema:
+            type: string
+          example: Taxi
+        - name: mcc
+          in: query
+          required: false
+          description: Exact MCC filter.
+          schema:
+            type: string
+          example: '4121'
+        - name: city
+          in: query
+          required: false
+          description: Case-insensitive contains filter for city.
+          schema:
+            type: string
+          example: Riyadh
+        - name: minAmount
+          in: query
+          required: false
+          description: Minimum transaction amount.
+          schema:
+            type: number
+            format: decimal
+            minimum: 0
+          example: 10.0
+        - name: maxAmount
+          in: query
+          required: false
+          description: Maximum transaction amount.
+          schema:
+            type: number
+            format: decimal
+            minimum: 0
+          example: 100.0
+        - name: role
+          in: query
+          required: false
+          description: User role filter. Unknown values are normalized to `all`.
+          schema:
+            $ref: '#/components/schemas/ActivityRole'
+          example: sender
+        - name: includeInfo
+          in: query
+          required: false
+          description: Whether to include informational audit rows.
+          schema:
+            type: boolean
+            default: true
+          example: true
+      responses:
+        '200':
+          description: Latest user activities fetched successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserLatestActivitiesEnvelope'
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: Latest user activities fetched successfully.
+                    data:
+                      userId: 1
+                      total: 1
+                      limit: 20
+                      offset: 0
+                      filters:
+                        decision: approved
+                        action: null
+                        entityType: null
+                        outcome: null
+                        cardId: null
+                        intentId: null
+                        fromUtc: null
+                        toUtc: null
+                        merchant: Taxi
+                        mcc: null
+                        city: null
+                        minAmount: null
+                        maxAmount: null
+                        role: sender
+                        includeInfo: true
+                      summary:
+                        approvedCount: 1
+                        declinedCount: 0
+                        infoCount: 0
+                        approvedSpendTotal: 25.5
+                        declinedAmountTotal: 0.0
+                        distinctCards: 1
+                        distinctIntents: 1
+                      items:
+                        - id: 90
+                          cardId: 31
+                          intentId: 21
+                          action: authorization
+                          decision: approved
+                          reason: null
+                          transactionAmount: 25.5
+                          merchantName: Riyadh Taxi
+                          mcc: '4121'
+                          city: Riyadh
+                          createdAt: '2026-05-01T02:00:00Z'
+                          occurredAt: '2026-05-01T02:00:00Z'
+                          creatorId: 1
+                          receiverId: 2
+                          role: sender
+                          intentDescription: Team travel allowance
+                          category: null
+                          country: SA
+                          intentAmount: 750.0
+                          remainingAmount: 724.5
+                          cardLast4: '1234'
+                          cardStatus: active
+                          isLockedByPendingInvoice: false
+                          isManuallyFrozen: false
+                          isRequestRefund: false
+                          isSpendBlocked: false
+                          senderName: null
+                          activityType: authorization
+                          title: Approved at Riyadh Taxi
+                          subtitle: Team travel allowance · Riyadh · MCC 4121
+                          severity: success
+                          amountLabel: $25.50
+                          entityType: transaction
+                          outcome: success
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /users/{userId}/transactions:
+    get:
+      tags: [Users]
+      summary: Get user transactions
+      description: Returns paged audit logs for all cards where the user is creator or receiver.
+      operationId: getUserTransactions
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+        - $ref: '#/components/parameters/LimitOptional'
+        - $ref: '#/components/parameters/OffsetOptional'
+      responses:
+        '200':
+          description: User transactions fetched successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserTransactionsEnvelope'
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: User transactions fetched successfully.
+                    data:
+                      userId: 1
+                      total: 1
+                      limit: 50
+                      offset: 0
+                      logs:
+                        - id: 90
+                          cardId: 31
+                          transactionAmount: 25.5
+                          merchantName: Riyadh Taxi
+                          mcc: '4121'
+                          decision: approved
+                          reason: null
+                          createdAt: '2026-05-01T02:00:00Z'
+                          city: Riyadh
+                          entityId: 21
+                          action: authorization
+                          occurredAt: '2026-05-01T02:00:00Z'
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /users/{userId}/cards/logs-as-receiver:
+    get:
+      tags: [Users]
+      summary: Get receiver card logs
+      description: Returns paged audit logs for cards where the user is the intent receiver.
+      operationId: getAuditLogsForReceiverCards
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+        - $ref: '#/components/parameters/LimitOptional'
+        - $ref: '#/components/parameters/OffsetOptional'
+      responses:
+        '200':
+          description: Receiver card audit logs fetched successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiverPagedAuditLogsEnvelope'
+              examples:
+                success:
+                  value:
+                    success: true
+                    message: Receiver card audit logs fetched successfully.
+                    data:
+                      receiverUserId: 2
+                      total: 1
+                      limit: 20
+                      offset: 0
+                      logs:
+                        - id: 90
+                          cardId: 31
+                          transactionAmount: 25.5
+                          merchantName: Riyadh Taxi
+                          mcc: '4121'
+                          decision: approved
+                          createdAt: '2026-05-01T02:00:00Z'
+                          city: Riyadh
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /verify-invoice:
+    post:
+      tags: [Verification]
+      summary: Verify invoice
+      description: Verifies an invoice image against an intent and updates invoice-pending card lock state based on the verification result.
+      operationId: verifyInvoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyInvoiceRequest'
+            examples:
+              verify:
+                value:
+                  intentId: 21
+                  imageUrl: https://example.com/invoices/21.png
+                  actingUserId: 2
+      responses:
+        '200':
+          description: Invoice verification completed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceVerificationEnvelope'
+              examples:
+                accepted:
+                  value:
+                    success: true
+                    message: Invoice verification completed successfully.
+                    data:
+                      isMatch: true
+                      reason: Invoice accepted.
+                      isLockedByPendingInvoice: false
+                      isManuallyFrozen: false
+                      isRequestRefund: false
+                      isSpendBlocked: false
+                      cardLocked: false
+                      provider: gemini
+                      invoiceCity: Riyadh
+                      invoiceCountry: SA
+                      hasGps: false
+                      gpsLatitude: null
+                      gpsLongitude: null
+                      metadataCity: null
+                      metadataCountry: null
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /simulate/tap-to-pay:
+    post:
+      tags: [Simulation]
+      summary: Simulate tap-to-pay
+      description: Simulates a card authorization and applies governance checks for card existence, intent existence, invoice lock, manual freeze, scheduled unlock, remaining amount, usage count, and MCC restrictions.
+      operationId: simulateTapToPay
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TapToPayRequest'
+            examples:
+              taxi:
+                value:
+                  cardNumber: '4111123412341234'
+                  amount: 25.5
+                  merchantName: Riyadh Taxi
+                  mcc: '4121'
+                  city: Riyadh
+                  country: SA
+      responses:
+        '200':
+          description: "Tap-to-pay simulation completed successfully. Business declines are returned with HTTP 200 and `approved: false`."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TapToPayEnvelope'
+              examples:
+                approved:
+                  value:
+                    success: true
+                    message: Tap-to-pay simulation completed successfully.
+                    data:
+                      approved: true
+                      reason: approved
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+                declinedByMcc:
+                  value:
+                    success: true
+                    message: Tap-to-pay simulation completed successfully.
+                    data:
+                      approved: false
+                      reason: 'Transaction declined: merchant category code [7994] is not allowed for this intent.'
+                    meta:
+                      statusCode: 200
+                      version: v1
+                      timestamp: '2026-05-01T02:00:00.0000000+00:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  parameters:
+    UserIdPath:
+      name: userId
+      in: path
+      required: true
+      description: User profile id.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+      example: 1
+    ProfileIdPath:
+      name: id
+      in: path
+      required: true
+      description: Profile id.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+      example: 1
+    IntentIdPath:
+      name: id
+      in: path
+      required: true
+      description: Intent id.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+      example: 21
+    CardIdPath:
+      name: cardId
+      in: path
+      required: true
+      description: Virtual card id.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+      example: 31
+    ActingUserIdRequired:
+      name: actingUserId
+      in: query
+      required: true
+      description: Temporary caller id. Must be a positive profile id and must be authorized for the resource.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+      example: 1
+    LimitOptional:
+      name: limit
+      in: query
+      required: false
+      description: Page size. Service clamps supported typed endpoints to 1..1000. Some card endpoints fallback to 50 when empty or invalid.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 1000
+        default: 50
+      example: 20
+    OffsetOptional:
+      name: offset
+      in: query
+      required: false
+      description: Number of records to skip. Negative values are normalized to 0 on typed endpoints.
+      schema:
+        type: integer
+        format: int32
+        minimum: 0
+        default: 0
+      example: 0
+
+  responses:
+    BadRequest:
+      description: Invalid request body, invalid query/path parameter, validation failure, or business rule error.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/ErrorResponse'
+              - $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            error:
+              value:
+                success: false
+                message: Invalid query parameter value.
+                detail: Failed to bind parameter "Nullable<int> limit" from "abc".
+            problem:
+              value:
+                type: about:blank
+                title: Bad Request
+                status: 400
+                detail: Request body is required.
+    Unauthorized:
+      description: Authentication is not implemented yet, but this standard response is reserved for future JWT/session authentication.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unauthorized:
+              value:
+                success: false
+                message: Authentication is required.
+    Forbidden:
+      description: The caller id is not allowed to access the requested resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            forbidden:
+              value:
+                success: false
+                message: "Access denied: this resource is only available to the sender or recipient."
+    NotFound:
+      description: Requested profile, intent, card, or related resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            notFound:
+              value:
+                success: false
+                message: Resource not found.
+    BadGateway:
+      description: External invoice verification service failed or returned an invalid operating state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            badGateway:
+              value:
+                success: false
+                message: Invoice verification service failed.
+    InternalServerError:
+      description: Unexpected server error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            error:
+              value:
+                success: false
+                message: Unexpected server error.
+
+  schemas:
+    DecisionStatus:
+      type: string
+      description: |
+        Audit decision status.
+        - `approved`: authorization or verification was approved.
+        - `declined`: authorization or verification was declined.
+        - `info`: non-financial informational event.
+      enum: [approved, declined, info]
+      example: approved
+
+    ActivityRole:
+      type: string
+      description: |
+        Activity ownership filter (normalized server-side before querying).
+        - `all`: all visible activities (default for unknown values).
+        - `sender`: creator-only perspective (`creator` and `sent` are treated as `sender`).
+        - `receiver`: receiver-only perspective (`recipient` and `received` are treated as `receiver`).
+        - `self`: creator and receiver are the same user on the card.
+      enum: [all, sender, creator, sent, receiver, recipient, received, self]
+      default: all
+      example: sender
+
+    ActivitySeverity:
+      type: string
+      description: Frontend severity derived from decision and card governance state.
+      enum: [success, danger, warning, neutral]
+      example: success
+
+    ActivityEntityType:
+      type: string
+      description: |
+        Derived classification for an activity row (API-computed).
+        - `profile`: vault balance changes and similar rows tied to `audit_logs.user_id` without a card.
+        - `intent`: intent-level governance events surfaced on the profile feed.
+        - `virtual_card`: card-scoped non-authorization events (freeze, invoice verification, intent updates).
+        - `transaction`: card authorization attempts (`action = authorization`).
+      enum: [profile, intent, virtual_card, transaction]
+      example: transaction
+
+    ActivityOutcome:
+      type: string
+      description: |
+        Normalized outcome for filtering and UI (API-computed). Query parameter name is `status`; response echoes `filters.outcome`.
+        - `success`: approved authorizations and successful balance credits.
+        - `failed`: declined authorizations and failed balance operations when modeled as such.
+        - `info`: informational audit rows (non-spend outcomes).
+      enum: [success, failed, info]
+      example: success
+
+    CardPerspectiveType:
+      type: string
+      description: Card `type` as returned on `IntentWithCardResponse.card` (current-user perspective).
+      enum: [self, sent, receiver]
+      example: sent
+
+    ActivityItemRole:
+      type: string
+      description: Role of the path user for a merged activity row. `participant` is reserved for edge cases.
+      enum: [sender, receiver, self, participant]
+      example: sender
+
+    RelationshipType:
+      type: string
+      description: Deprecated umbrella; prefer `CardPerspectiveType` for embedded cards and `ActivityItemRole` for activity items.
+      enum: [self, sent, receiver, participant]
+      example: sent
+
+    ErrorResponse:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+          description: Always false for this error shape.
+          example: false
+        message:
+          type: string
+          description: Human-readable error message.
+          example: Query parameter actingUserId is required.
+        detail:
+          type: string
+          nullable: true
+          description: Optional technical detail, especially for binding failures.
+          example: Failed to bind parameter "Nullable<int> limit" from "abc".
+
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          example: about:blank
+        title:
+          type: string
+          example: Bad Request
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: string
+          example: Request body is required.
+
+    Meta:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+          example: 200
+        version:
+          type: string
+          example: v1
+        timestamp:
+          type: string
+          format: date-time
+          example: '2026-05-01T02:00:00.0000000+00:00'
+
+    AddFundsRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: number
+          format: decimal
+          description: Amount to credit to the profile vault. Must be greater than zero.
+          minimum: 0
+          exclusiveMinimum: true
+          example: 500.0
+
+    CreateIntentRequest:
+      type: object
+      required: [creatorId, userId, amount]
+      properties:
+        creatorId:
+          type: integer
+          format: int32
+          description: Sender profile id.
+          minimum: 1
+          example: 1
+        userId:
+          type: integer
+          format: int32
+          description: Receiver profile id.
+          minimum: 1
+          example: 2
+        amount:
+          type: number
+          format: decimal
+          description: Intent principal amount.
+          minimum: 0
+          exclusiveMinimum: true
+          example: 750.0
+        useTimes:
+          type: integer
+          format: int32
+          nullable: true
+          description: Number of times the card can be used. Defaults to the business value "unlimited" if omitted or null. The current implementation stores unlimited as numeric sentinel `99999`, so clients should display `99999` as `unlimited`.
+          default: 99999
+          x-business-default: unlimited
+          x-display-default: unlimited
+          example: 99999
+        expiryDate:
+          type: string
+          format: date-time
+          nullable: true
+          description: Optional expiry date. If omitted, the generated card response uses an expiry about three years from creation.
+          example: '2029-05-01T00:00:00Z'
+        country:
+          type: string
+          nullable: true
+          description: Optional country restriction or metadata.
+          example: SA
+        city:
+          type: string
+          nullable: true
+          description: Optional city restriction or metadata.
+          example: Riyadh
+        description:
+          type: string
+          nullable: true
+          description: Optional intent description.
+          example: Team travel allowance
+        mccList:
+          type: array
+          nullable: true
+          description: Optional allowed MCC list. Empty or null means no MCC restriction.
+          items:
+            type: string
+          example: ['4121', '7011']
+        firstDateToUser:
+          type: string
+          format: date-time
+          nullable: true
+          description: Optional scheduled unlock time for the receiver.
+          example: '2026-05-02T09:00:00Z'
+        requiredInvoiceProve:
+          type: boolean
+          nullable: true
+          default: false
+          description: Whether invoice proof is required for the intent.
+          example: true
+
+    PatchIntentRequest:
+      type: object
+      description: Whitelisted intent metadata update. Financial and usage fields cannot be patched.
+      properties:
+        description:
+          type: string
+          nullable: true
+          example: Updated travel allowance
+        city:
+          type: string
+          nullable: true
+          example: Jeddah
+        country:
+          type: string
+          nullable: true
+          example: SA
+        category:
+          type: string
+          nullable: true
+          example: Travel
+        mccList:
+          type: array
+          nullable: true
+          items:
+            type: string
+          example: ['4121', '5812']
+        requiredInvoiceProve:
+          type: boolean
+          nullable: true
+          example: false
+
+    SetCardLockRequest:
+      type: object
+      required: [locked, actingUserId]
+      properties:
+        locked:
+          type: boolean
+          description: True to manually freeze the card, false to unfreeze it.
+          example: true
+        actingUserId:
+          type: integer
+          format: int32
+          description: Caller profile id. Must be creator or receiver.
+          minimum: 1
+          example: 1
+
+    RequestRefundBody:
+      type: object
+      required: [actingUserId]
+      properties:
+        actingUserId:
+          type: integer
+          format: int32
+          description: Caller profile id. Must be creator or receiver.
+          minimum: 1
+          example: 1
+
+    RefundRequestRecordedEnvelope:
+      type: object
+      required: [success, message, meta]
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Refund request recorded successfully.
+        meta:
+          type: object
+          properties:
+            statusCode:
+              type: integer
+              example: 200
+            version:
+              type: string
+              example: v1
+            timestamp:
+              type: string
+              example: '2026-05-01T02:00:00.0000000+00:00'
+
+    VerifyInvoiceRequest:
+      type: object
+      required: [intentId, imageUrl, actingUserId]
+      properties:
+        intentId:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Intent id to verify against.
+          example: 21
+        imageUrl:
+          type: string
+          format: uri
+          description: Public or service-accessible invoice image URL.
+          example: https://example.com/invoices/21.png
+        actingUserId:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Caller profile id. Must be creator or receiver.
+          example: 2
+
+    TapToPayRequest:
+      type: object
+      required: [cardNumber, amount, merchantName, mcc, city, country]
+      properties:
+        cardNumber:
+          type: string
+          description: Full virtual card number.
+          example: '4111123412341234'
+        amount:
+          type: number
+          format: decimal
+          description: Transaction amount.
+          minimum: 0
+          exclusiveMinimum: true
+          example: 25.5
+        merchantName:
+          type: string
+          description: Merchant display name.
+          example: Riyadh Taxi
+        mcc:
+          type: string
+          description: Merchant category code.
+          example: '4121'
+        city:
+          type: string
+          description: Transaction city.
+          example: Riyadh
+        country:
+          type: string
+          description: Transaction country.
+          example: SA
+
+    ProfileFullEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelopeBase'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              $ref: '#/components/schemas/ProfileFullResponse'
+            meta:
+              $ref: '#/components/schemas/Meta'
+
+    ProfileBalanceEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelopeBase'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              $ref: '#/components/schemas/ProfileBalanceResponse'
+            meta:
+              $ref: '#/components/schemas/Meta'
+
+    ProfileSearchEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelopeBase'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProfileSearchItem'
+            meta:
+              $ref: '#/components/schemas/Meta'
+
+    HomeSummaryEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelopeBase'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              $ref: '#/components/schemas/HomeSummaryResponse'
+            meta:
+              $ref: '#/components/schemas/Meta'
+
+    CreateIntentResponse:
+      type: object
+      required: [data, message, status]
+      properties:
+        data:
+          $ref: '#/components/schemas/IntentWithCardResponse'
+        message:
+          type: string
+          example: Intent and virtual card created successfully.
+        status:
+          type: integer
+          example: 201
+
+    IntentWithCardEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelopeBase'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              $ref: '#/components/schemas/IntentWithCardResponse'
+            meta:
+              $ref: '#/components/schemas/Meta'
+
+    IntentDetailEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelopeBase'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              $ref: '#/components/schemas/IntentDetailResponse'
+            meta:
+              $ref: '#/components/schemas/Meta'
+
+    CardWithLogsEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelopeBase'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              $ref: '#/components/schemas/CardWithLogsResponse'
+            meta:
+              $ref: '#/components/schemas/Meta'
+
+    PagedAuditLogsEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelopeBase'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              $ref: '#/components/schemas/PagedAuditLogsResponse'
+            meta:
+              $ref: '#/components/schemas/Meta'
+
+    CardManualFreezeEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelopeBase'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              $ref: '#/components/schemas/CardManualFreezeStateResponse'
+            meta:
+              $ref: '#/components/schemas/Meta'
+
+    PagedCardsEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelopeBase'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              $ref: '#/components/schemas/PagedCardsResponse'
+            meta:
+              $ref: '#/components/schemas/Meta'
+
+    DashboardMetricsEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelopeBase'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              $ref: '#/components/schemas/DashboardMetricsResponse'
+            meta:
+              $ref: '#/components/schemas/Meta'
+
+    UserLatestActivitiesEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelopeBase'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              $ref: '#/components/schemas/UserLatestActivitiesResponse'
+            meta:
+              $ref: '#/components/schemas/Meta'
+
+    UserTransactionsEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelopeBase'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              $ref: '#/components/schemas/UserTransactionsResponse'
+            meta:
+              $ref: '#/components/schemas/Meta'
+
+    ReceiverPagedAuditLogsEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelopeBase'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              $ref: '#/components/schemas/ReceiverPagedAuditLogsResponse'
+            meta:
+              $ref: '#/components/schemas/Meta'
+
+    InvoiceVerificationEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelopeBase'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              $ref: '#/components/schemas/InvoiceVerificationResponse'
+            meta:
+              $ref: '#/components/schemas/Meta'
+
+    TapToPayEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelopeBase'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              $ref: '#/components/schemas/TapToPayResult'
+            meta:
+              $ref: '#/components/schemas/Meta'
+
+    SuccessEnvelopeBase:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Operation completed successfully.
+
+    ProfileFullResponse:
+      type: object
+      required: [id, name, vaultBalance, lockMoney, link, contacts, points]
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Mohammed Fares
+        username:
+          type: string
+          nullable: true
+          example: mohammed
+        email:
+          type: string
+          nullable: true
+          example: mohammed@example.com
+        vaultBalance:
+          type: number
+          format: decimal
+          example: 12000.0
+        lockMoney:
+          type: number
+          format: decimal
+          example: 2500.0
+        link:
+          type: string
+          example: https://intentpay.app/u/1
+        contacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContactSummary'
+        points:
+          type: integer
+          description: Mock points generated by the current service.
+          example: 11
+
+    ProfileBalanceResponse:
+      type: object
+      required: [id, name, username, email, vaultBalance, lockMoney]
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Mohammed Fares
+        username:
+          type: string
+          nullable: true
+          example: mohammed
+        email:
+          type: string
+          nullable: true
+          example: mohammed@example.com
+        vaultBalance:
+          type: number
+          format: decimal
+          example: 12500.0
+        lockMoney:
+          type: number
+          format: decimal
+          example: 2500.0
+
+    ContactSummary:
+      type: object
+      required: [id, name, email, username, link]
+      properties:
+        id:
+          type: integer
+          example: 2
+        name:
+          type: string
+          example: Aisha Saleh
+        email:
+          type: string
+          nullable: true
+          example: aisha@example.com
+        username:
+          type: string
+          nullable: true
+          example: aisha
+        link:
+          type: string
+          example: https://intentpay.app/u/2
+
+    ProfileSearchItem:
+      allOf:
+        - $ref: '#/components/schemas/ContactSummary'
+
+    HomeSummaryResponse:
+      type: object
+      required: [freeMoney, lockMoney, totalActivityCount, selfCards, receivedCards, sentCards]
+      properties:
+        freeMoney:
+          type: number
+          format: decimal
+          example: 9500.0
+        lockMoney:
+          type: number
+          format: decimal
+          example: 2500.0
+        totalActivityCount:
+          type: integer
+          example: 12
+        selfCards:
+          $ref: '#/components/schemas/CardSection'
+        receivedCards:
+          $ref: '#/components/schemas/CardSection'
+        sentCards:
+          $ref: '#/components/schemas/CardSection'
+
+    CardSection:
+      type: object
+      required: [items, count]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/IntentWithCardResponse'
+        count:
+          type: integer
+          description: Number of items in the section.
+          example: 0
+
+    IntentWithCardResponse:
+      type: object
+      required: [intentId, city, country, mccList, requiredInvoiceProve, card]
+      properties:
+        intentId:
+          type: integer
+          example: 21
+        city:
+          type: string
+          example: Riyadh
+        country:
+          type: string
+          example: SA
+        description:
+          type: string
+          nullable: true
+          example: Team travel allowance
+        mccList:
+          type: array
+          items:
+            $ref: '#/components/schemas/MccItem'
+        requiredInvoiceProve:
+          type: boolean
+          example: true
+        card:
+          $ref: '#/components/schemas/CardDetailsResponse'
+
+    CardDetailsResponse:
+      type: object
+      required:
+        - id
+        - stripeId
+        - createdAt
+        - status
+        - isLockedByPendingInvoice
+        - isManuallyFrozen
+        - isSpendBlocked
+        - isRequestRefund
+        - cardNumber
+        - last4
+        - cvv
+        - expiryDate
+        - expiryMonth
+        - expiryYear
+        - cardholderName
+        - amount
+        - remainingAmount
+        - useTimes
+        - usesLeft
+        - minutesToUnlock
+        - hoursToUnlock
+        - daysToUnlock
+        - timeRemainingLeveled
+        - daysLocked
+        - creatorId
+        - retrieveId
+        - type
+      properties:
+        id:
+          type: integer
+          example: 31
+        stripeId:
+          type: string
+          example: ic_1234567890abcdef1234
+        createdAt:
+          type: string
+          format: date-time
+          example: '2026-05-01T02:00:00Z'
+        status:
+          type: string
+          description: Card status value from the database.
+          example: active
+        isLockedByPendingInvoice:
+          type: boolean
+          example: false
+        isManuallyFrozen:
+          type: boolean
+          example: false
+        isSpendBlocked:
+          type: boolean
+          description: True when invoice lock or manual freeze blocks spending.
+          example: false
+        isRequestRefund:
+          type: boolean
+          description: True when sender or recipient submitted POST /cards/{cardId}/request-refund.
+          example: false
+        cardNumber:
+          type: string
+          description: Full card PAN in the current MVP.
+          example: '4111123412341234'
+        last4:
+          type: string
+          example: '1234'
+        cvv:
+          type: string
+          description: Full CVV in the current MVP.
+          example: '123'
+        expiryDate:
+          type: string
+          description: Formatted as MM/YY.
+          example: 05/29
+        expiryMonth:
+          type: integer
+          example: 5
+        expiryYear:
+          type: integer
+          example: 2029
+        cardholderName:
+          type: string
+          example: Aisha Saleh
+        amount:
+          type: number
+          format: decimal
+          example: 750.0
+        remainingAmount:
+          type: number
+          format: decimal
+          example: 724.5
+        useTimes:
+          type: integer
+          format: int32
+          description: Total allowed uses. A value of `99999` represents the business default `unlimited`.
+          default: 99999
+          x-business-default: unlimited
+          x-display-default: unlimited
+          example: 99999
+        usesLeft:
+          type: integer
+          format: int32
+          description: Remaining allowed uses. For unlimited cards this starts at `99999` and is displayed as `unlimited` by clients.
+          example: 99999
+        unLockedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-05-01T02:00:00Z'
+        minutesToUnlock:
+          type: integer
+          format: int64
+          example: 0
+        hoursToUnlock:
+          type: integer
+          format: int64
+          example: 0
+        daysToUnlock:
+          type: integer
+          format: int64
+          example: 0
+        timeRemainingLeveled:
+          type: string
+          example: Available Now
+        daysLocked:
+          type: integer
+          example: 0
+        creatorId:
+          type: integer
+          example: 1
+        retrieveId:
+          type: integer
+          description: Receiver profile id.
+          example: 2
+        type:
+          $ref: '#/components/schemas/CardPerspectiveType'
+        senderName:
+          type: string
+          nullable: true
+          example: Mohammed Fares
+
+    MccItem:
+      type: object
+      required: [code, name, group]
+      properties:
+        code:
+          type: string
+          example: '4121'
+        name:
+          type: string
+          example: Taxis & Rideshare
+        group:
+          type: string
+          example: Transport
+
+    IntentDetailResponse:
+      type: object
+      required: [intentId, intent, card, rich]
+      properties:
+        intentId:
+          type: integer
+          example: 21
+        intent:
+          $ref: '#/components/schemas/IntentModel'
+        card:
+          $ref: '#/components/schemas/CardDetailsResponse'
+        rich:
+          $ref: '#/components/schemas/IntentWithCardResponse'
+
+    IntentModel:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 21
+        creatorId:
+          type: integer
+          example: 1
+        receiverId:
+          type: integer
+          example: 2
+        amount:
+          type: number
+          format: decimal
+          example: 750.0
+        remainingAmount:
+          type: number
+          format: decimal
+          example: 724.5
+        useTimes:
+          type: integer
+          default: 99999
+          x-business-default: unlimited
+          x-display-default: unlimited
+          example: 99999
+        usesLeft:
+          type: integer
+          example: 99999
+        expiryAt:
+          type: string
+          format: date-time
+          nullable: true
+        country:
+          type: string
+          nullable: true
+          example: SA
+        city:
+          type: string
+          nullable: true
+          example: Riyadh
+        description:
+          type: string
+          nullable: true
+          example: Team travel allowance
+        status:
+          type: string
+          example: active
+        createdAt:
+          type: string
+          format: date-time
+        category:
+          type: string
+          nullable: true
+        mccCodes:
+          type: array
+          items:
+            type: string
+        firstDateToUser:
+          type: string
+          format: date-time
+          nullable: true
+        requiredInvoiceProve:
+          type: boolean
+          example: true
+
+    CardWithLogsResponse:
+      type: object
+      required: [card, logs]
+      properties:
+        card:
+          $ref: '#/components/schemas/IntentWithCardResponse'
+        logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLogDto'
+
+    PagedCardsResponse:
+      type: object
+      required: [total, limit, offset, items]
+      properties:
+        total:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 10
+        offset:
+          type: integer
+          example: 0
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/IntentWithCardResponse'
+
+    AuditLogDto:
+      type: object
+      required: [id, cardId, transactionAmount, decision, createdAt]
+      properties:
+        id:
+          type: integer
+          example: 90
+        cardId:
+          type: integer
+          nullable: true
+          example: 31
+        transactionAmount:
+          type: number
+          format: decimal
+          example: 25.5
+        merchantName:
+          type: string
+          nullable: true
+          example: Riyadh Taxi
+        mcc:
+          type: string
+          nullable: true
+          example: '4121'
+        decision:
+          $ref: '#/components/schemas/DecisionStatus'
+        reason:
+          type: string
+          nullable: true
+          example: "Transaction declined: insufficient remaining balance."
+        createdAt:
+          type: string
+          format: date-time
+          example: '2026-05-01T02:00:00Z'
+        city:
+          type: string
+          nullable: true
+          example: Riyadh
+        country:
+          type: string
+          nullable: true
+          description: Present only if the model exposes it.
+          example: SA
+        externalId:
+          type: string
+          nullable: true
+          description: Present only if the model exposes it.
+          example: ext_123
+        entityId:
+          type: integer
+          nullable: true
+          description: Logical entity id, commonly the intent id.
+          example: 21
+        action:
+          type: string
+          nullable: true
+          example: authorization
+        occurredAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-05-01T02:00:00Z'
+
+    PagedAuditLogsResponse:
+      type: object
+      required: [cardId, total, limit, offset, logs]
+      properties:
+        cardId:
+          type: integer
+          example: 31
+        total:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        offset:
+          type: integer
+          example: 0
+        logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLogDto'
+
+    ReceiverPagedAuditLogsResponse:
+      type: object
+      required: [receiverUserId, total, limit, offset, logs]
+      properties:
+        receiverUserId:
+          type: integer
+          example: 2
+        total:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        offset:
+          type: integer
+          example: 0
+        logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLogDto'
+
+    UserTransactionsResponse:
+      type: object
+      required: [userId, total, limit, offset, logs]
+      properties:
+        userId:
+          type: integer
+          example: 1
+        total:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 50
+        offset:
+          type: integer
+          example: 0
+        logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLogDto'
+
+    CardManualFreezeStateResponse:
+      type: object
+      required: [cardId, isManuallyFrozen, isLockedByPendingInvoice, isRequestRefund, isSpendBlocked, previousManualFreeze]
+      properties:
+        cardId:
+          type: integer
+          example: 31
+        isManuallyFrozen:
+          type: boolean
+          example: true
+        isLockedByPendingInvoice:
+          type: boolean
+          example: false
+        isRequestRefund:
+          type: boolean
+          description: Whether sender or recipient submitted POST /cards/{cardId}/request-refund.
+          example: false
+        isSpendBlocked:
+          type: boolean
+          example: true
+        previousManualFreeze:
+          type: boolean
+          example: false
+
+    DashboardMetricsResponse:
+      type: object
+      required: [userId, totalSpentApproved, totalIntentPrincipal, totalRemainingAcrossIntents, distinctIntentCount, distinctCardCount]
+      properties:
+        userId:
+          type: integer
+          example: 1
+        totalSpentApproved:
+          type: number
+          format: decimal
+          example: 300.0
+        totalIntentPrincipal:
+          type: number
+          format: decimal
+          example: 2500.0
+        totalRemainingAcrossIntents:
+          type: number
+          format: decimal
+          example: 2200.0
+        distinctIntentCount:
+          type: integer
+          example: 4
+        distinctCardCount:
+          type: integer
+          example: 4
+
+    UserLatestActivitiesResponse:
+      type: object
+      required: [userId, total, limit, offset, filters, summary, items]
+      properties:
+        userId:
+          type: integer
+          example: 1
+        total:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        offset:
+          type: integer
+          example: 0
+        filters:
+          $ref: '#/components/schemas/UserLatestActivitiesAppliedFilters'
+        summary:
+          $ref: '#/components/schemas/UserLatestActivitiesSummary'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserActivityItem'
+
+    UserLatestActivitiesAppliedFilters:
+      type: object
+      required: [role, includeInfo]
+      properties:
+        decision:
+          $ref: '#/components/schemas/DecisionStatus'
+        action:
+          type: string
+          nullable: true
+          example: authorization
+        entityType:
+          type: string
+          nullable: true
+          description: Echo of query `entityType` when provided.
+          enum: [profile, intent, virtual_card, transaction]
+        outcome:
+          type: string
+          nullable: true
+          description: Echo of query `status` (JSON field `outcome`).
+          enum: [success, failed, info]
+        cardId:
+          type: integer
+          nullable: true
+          example: 31
+        intentId:
+          type: integer
+          nullable: true
+          example: 21
+        fromUtc:
+          type: string
+          format: date-time
+          nullable: true
+        toUtc:
+          type: string
+          format: date-time
+          nullable: true
+        merchant:
+          type: string
+          nullable: true
+          example: Taxi
+        mcc:
+          type: string
+          nullable: true
+          example: '4121'
+        city:
+          type: string
+          nullable: true
+          example: Riyadh
+        minAmount:
+          type: number
+          format: decimal
+          nullable: true
+          example: 10.0
+        maxAmount:
+          type: number
+          format: decimal
+          nullable: true
+          example: 100.0
+        role:
+          $ref: '#/components/schemas/ActivityRole'
+        includeInfo:
+          type: boolean
+          example: true
+
+    UserLatestActivitiesSummary:
+      type: object
+      required: [approvedCount, declinedCount, infoCount, approvedSpendTotal, declinedAmountTotal, distinctCards, distinctIntents]
+      properties:
+        approvedCount:
+          type: integer
+          example: 1
+        declinedCount:
+          type: integer
+          example: 0
+        infoCount:
+          type: integer
+          example: 0
+        approvedSpendTotal:
+          type: number
+          format: decimal
+          example: 25.5
+        declinedAmountTotal:
+          type: number
+          format: decimal
+          example: 0.0
+        distinctCards:
+          type: integer
+          example: 1
+        distinctIntents:
+          type: integer
+          example: 1
+
+    UserActivityItem:
+      type: object
+      required:
+        - id
+        - decision
+        - transactionAmount
+        - createdAt
+        - creatorId
+        - receiverId
+        - role
+        - intentAmount
+        - remainingAmount
+        - cardLast4
+        - cardStatus
+        - isLockedByPendingInvoice
+        - isManuallyFrozen
+        - isRequestRefund
+        - isSpendBlocked
+        - activityType
+        - title
+        - subtitle
+        - severity
+        - amountLabel
+      properties:
+        id:
+          type: integer
+          example: 90
+        cardId:
+          type: integer
+          nullable: true
+          example: 31
+        intentId:
+          type: integer
+          nullable: true
+          example: 21
+        action:
+          type: string
+          nullable: true
+          example: authorization
+        decision:
+          $ref: '#/components/schemas/DecisionStatus'
+        reason:
+          type: string
+          nullable: true
+          example: "Transaction declined: insufficient remaining balance."
+        transactionAmount:
+          type: number
+          format: decimal
+          example: 25.5
+        merchantName:
+          type: string
+          nullable: true
+          example: Riyadh Taxi
+        mcc:
+          type: string
+          nullable: true
+          example: '4121'
+        city:
+          type: string
+          nullable: true
+          example: Riyadh
+        createdAt:
+          type: string
+          format: date-time
+          example: '2026-05-01T02:00:00Z'
+        occurredAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-05-01T02:00:00Z'
+        creatorId:
+          type: integer
+          example: 1
+        receiverId:
+          type: integer
+          example: 2
+        role:
+          $ref: '#/components/schemas/ActivityItemRole'
+        intentDescription:
+          type: string
+          nullable: true
+          example: Team travel allowance
+        category:
+          type: string
+          nullable: true
+          example: Travel
+        country:
+          type: string
+          nullable: true
+          example: SA
+        intentAmount:
+          type: number
+          format: decimal
+          example: 750.0
+        remainingAmount:
+          type: number
+          format: decimal
+          example: 724.5
+        cardLast4:
+          type: string
+          example: '1234'
+        cardStatus:
+          type: string
+          example: active
+        isLockedByPendingInvoice:
+          type: boolean
+          example: false
+        isManuallyFrozen:
+          type: boolean
+          example: false
+        isRequestRefund:
+          type: boolean
+          description: Whether sender or recipient submitted POST /cards/{cardId}/request-refund for this card.
+          example: false
+        isSpendBlocked:
+          type: boolean
+          example: false
+        senderName:
+          type: string
+          nullable: true
+          example: Mohammed Fares
+        activityType:
+          type: string
+          example: authorization
+        title:
+          type: string
+          example: Approved at Riyadh Taxi
+        subtitle:
+          type: string
+          example: Team travel allowance · Riyadh · MCC 4121
+        severity:
+          $ref: '#/components/schemas/ActivitySeverity'
+        amountLabel:
+          type: string
+          example: $25.50
+        entityType:
+          type: string
+          nullable: true
+          enum: [profile, intent, virtual_card, transaction]
+        outcome:
+          type: string
+          nullable: true
+          enum: [success, failed, info]
+
+    InvoiceVerificationResponse:
+      type: object
+      description: |
+        Payload from `VerifyInvoiceAsync`. When `requiredInvoiceProve` is false on the intent, the API returns the
+        `skippedVerification` branch without calling the LLM. Otherwise fields reflect verification outcome and optional geo metadata.
+      properties:
+        skippedVerification:
+          type: boolean
+          description: Present and true when invoice proof was not required.
+        isMatch:
+          type: boolean
+          description: Whether the invoice image matched intent expectations (or true on skip branch).
+        reason:
+          type: string
+          nullable: true
+        isLockedByPendingInvoice:
+          type: boolean
+        isManuallyFrozen:
+          type: boolean
+        isRequestRefund:
+          type: boolean
+          description: Virtual card refund-request flag (POST request-refund).
+        isSpendBlocked:
+          type: boolean
+        cardLocked:
+          type: boolean
+          description: Same as `isSpendBlocked` in current implementation.
+        provider:
+          type: string
+          nullable: true
+        invoiceCity:
+          type: string
+          nullable: true
+        invoiceCountry:
+          type: string
+          nullable: true
+        hasGps:
+          type: boolean
+          nullable: true
+        gpsLatitude:
+          type: number
+          format: double
+          nullable: true
+        gpsLongitude:
+          type: number
+          format: double
+          nullable: true
+        metadataCity:
+          type: string
+          nullable: true
+        metadataCountry:
+          type: string
+          nullable: true
+
+    TapToPayResult:
+      type: object
+      required: [approved, reason]
+      properties:
+        approved:
+          type: boolean
+          description: Whether the simulated authorization was approved.
+          example: true
+        reason:
+          type: string
+          description: Approval marker or decline reason.
+          example: approved

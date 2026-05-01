@@ -50,3 +50,6 @@ Thumbs.db
 *.log
 /IntPay.Api/Properties/PublishProfiles
 /.vs
+/IntPay.Api/IntPay.Api.Tests
+/IntPay.Api/_test_out
+/IntPay.Api/_build_out

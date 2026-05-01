@@ -4,6 +4,13 @@ using MetadataExtractor.Formats.Exif;
 namespace IntPay.Api.Services;
 
 /// <summary>Reads GPS coordinates from image EXIF (JPEG/TIFF etc.) using MetadataExtractor.</summary>
+/// <remarks>
+/// <para><b>Traversal:</b> MetadataExtractor returns all metadata directories; we only consume <see cref="GpsDirectory"/> entries.</para>
+/// <para><b>HasValue / NaN / near-zero:</b> Some writers emit a GPS directory with missing or (0,0) coordinates; those are ignored so
+/// downstream LLM prompts do not treat junk coordinates as real evidence.</para>
+/// <para><b>Failures:</b> Corrupt images or unsupported formats throw from the library — we swallow and return <see cref="GpsCoordinateResult.None"/>
+/// because missing GPS must never fail the overall invoice verification pipeline.</para>
+/// </remarks>
 public static class InvoiceImageGpsExtractor
 {
     /// <summary>Returns GPS coordinates when present and non-zero; otherwise <see cref="GpsCoordinateResult.None"/>.</summary>
@@ -22,6 +29,7 @@ public static class InvoiceImageGpsExtractor
                 if (directory is not GpsDirectory gps)
                     continue;
 
+                // GetGeoLocation() is nullable — absence means "no fix" even if a GPS directory exists.
                 var locationNullable = gps.GetGeoLocation();
                 if (!locationNullable.HasValue)
                     continue;
