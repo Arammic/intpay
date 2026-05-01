@@ -1,4 +1,4 @@
-using IntPay.Api.supabase;
+﻿using IntPay.Api.supabase;
 using IntPay.Api.supabase.Models;
 using Supabase;
 using Supabase.Postgrest.Interfaces;
@@ -316,6 +316,27 @@ namespace IntPay.Api.Services
                 return new { approved = false, reason = CardSpendBlockMessages.ManualFreeze };
             }
 
+            if (string.Equals(card.Status, VirtualCardLifecycleStatus.Inactive, StringComparison.OrdinalIgnoreCase))
+            {
+                var inactiveLog = new AuditLog
+                {
+                    CardId = card.Id,
+                    EntityId = intent.Id,
+                    Action = "authorization",
+                    TransactionAmount = payload.Amount,
+                    MerchantName = payload.MerchantName,
+                    Mcc = payload.Mcc,
+                    City = payload.City,
+                    Decision = "declined",
+                    Reason = CardSpendBlockMessages.InactiveLifecycle,
+                    CreatedAt = DateTime.UtcNow,
+                    OccurredAt = DateTime.UtcNow
+                };
+
+                await _audit.InsertAsync(inactiveLog);
+                return new { approved = false, reason = CardSpendBlockMessages.InactiveLifecycle };
+            }
+
             // 3. Check time-gated activation
             if (intent.FirstDateToUser.HasValue && DateTime.UtcNow < intent.FirstDateToUser.Value)
             {
@@ -415,7 +436,7 @@ namespace IntPay.Api.Services
                 UsesLeft = row.UsesLeft,
                 FirstDateToUser = row.FirstDateToUser,
                 CreatedAt = row.CreatedAt,
-                Status = row.Status,
+                Status = string.Empty,
                 City = row.City,
                 Country = row.Country,
                 Description = row.Description,
@@ -474,7 +495,7 @@ namespace IntPay.Api.Services
                 UsesLeft = row.UsesLeft,
                 FirstDateToUser = row.FirstDateToUser,
                 CreatedAt = row.CreatedAt,
-                Status = row.Status,
+                Status = string.Empty,
                 City = row.City,
                 Country = row.Country,
                 Description = row.Description,
@@ -541,7 +562,7 @@ namespace IntPay.Api.Services
                     UsesLeft = row.UsesLeft,
                     FirstDateToUser = row.FirstDateToUser,
                     CreatedAt = row.CreatedAt,
-                    Status = row.Status,
+                    Status = string.Empty,
                     City = row.City,
                     Country = row.Country,
                     Description = row.Description,
@@ -608,6 +629,39 @@ namespace IntPay.Api.Services
                 isSpendBlocked = card.IsLockedByPendingInvoice || card.IsManuallyFrozen,
                 previousManualFreeze = previous
             };
+        }
+
+        /// <summary>Sets <c>virtual_cards.status</c> to active or inactive (sender/recipient only).</summary>
+        public async Task<object> SetVirtualCardLifecycleStatusAsync(int cardId, string status, int actingUserId)
+        {
+            var row = await _access.EnsureCanAccessCardAsync(cardId, actingUserId);
+            var normalized = VirtualCardLifecycleStatus.NormalizeRequired(status);
+
+            var card = await _client.From<VirtualCard>().Where(x => x.Id == cardId).Single();
+            if (card == null)
+                throw new KeyNotFoundException("Virtual card not found");
+
+            var previous = card.Status ?? string.Empty;
+            if (string.Equals(previous, normalized, StringComparison.Ordinal))
+                return new { cardId, status = normalized, previousStatus = previous };
+
+            card.Status = normalized;
+            await _client.From<VirtualCard>().Update(card);
+
+            var now = DateTime.UtcNow;
+            await _audit.InsertAsync(new AuditLog
+            {
+                CardId = card.Id,
+                EntityId = row.IntentId,
+                Action = "card_lifecycle_status_set",
+                Decision = "info",
+                Reason = $"Lifecycle status set to {normalized} by user {actingUserId} (was {previous}).",
+                TransactionAmount = 0,
+                CreatedAt = now,
+                OccurredAt = now
+            });
+
+            return new { cardId, status = normalized, previousStatus = previous };
         }
 
         /// <summary>Sets <c>virtual_cards.is_request_refund</c> to true (sender/recipient only). Idempotent.</summary>
@@ -1171,6 +1225,7 @@ namespace IntPay.Api.Services
                 "wallet_credit" => "Wallet credited",
                 "invoice_verification" => "Invoice verification",
                 "card_manual_freeze_set" => "Manual freeze updated",
+                "card_lifecycle_status_set" => "Card lifecycle status updated",
                 "budget_intent_created" => "Budget intent created",
                 "virtual_card_issued" => "Virtual card issued",
                 "jit_funding_authorization" => "JIT funding authorization",

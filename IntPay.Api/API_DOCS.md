@@ -144,13 +144,18 @@ Base path: `/api/v1`
 
 لا تُستخدم القيمة `participant` على كائن البطاقة الغني؛ تظهر فقط في `UserActivityItem.role` عند الحاجة كما في قسم `activity role`.
 
-### `card status` و`intent status`
+### `card status` (lifecycle)
 
-القيم تأتي من قاعدة البيانات ولا يوجد enum C# مغلق لها في الكود. القيم المستخدمة في البيانات الحالية تشمل مثلًا:
+`CardDetailsResponse.status` و`UserActivityItem.cardStatus` يعكسان **`virtual_cards.status`** فقط:
 
 - `active`
-- `LOCKED`
-- أي قيمة أخرى موجودة في قاعدة البيانات سترجع كما هي.
+- `inactive`
+
+لا يُعرَض **intent status** عبر حقل `status` في الاستجابات الغنية؛ يبقى على جدول `intents` إذا احتجته لاحقًا من مسارات أخرى.
+
+قيد قاعدة البيانات (بعد تطبيق الهجرة): قيمة العمود مقيدة بـ `active` أو `inactive` فقط.
+
+يمكن تغيير دورة حياة البطاقة عبر **`POST /cards/{cardId}/lifecycle-status`** (انظر قسم البطاقات).
 
 ## أنواع البيانات المشتركة
 
@@ -182,7 +187,7 @@ Base path: `/api/v1`
 - `id` (`integer`): رقم البطاقة في قاعدة البيانات.
 - `stripeId` (`string`): معرف البطاقة الخارجي/المولد.
 - `createdAt` (`string`, date-time)
-- `status` (`string`)
+- `status` (`string`): **`virtual_cards.status`** — `active` أو `inactive` فقط (دورة حياة البطاقة).
 - `isLockedByPendingInvoice` (`boolean`)
 - `isManuallyFrozen` (`boolean`)
 - `isSpendBlocked` (`boolean`): true إذا كان يوجد قفل فاتورة أو تجميد يدوي.
@@ -1115,6 +1120,69 @@ Response example:
     "isRequestRefund": false,
     "isSpendBlocked": true,
     "previousManualFreeze": false
+  },
+  "meta": {
+    "statusCode": 200,
+    "version": "v1",
+    "timestamp": "2026-05-01T02:00:00.0000000+00:00"
+  }
+}
+```
+
+### Set Virtual Card Lifecycle Status
+
+Endpoint: `POST /cards/{cardId}/lifecycle-status`
+
+الوصف: يضبط `virtual_cards.status` إلى `active` أو `inactive` فقط. يجب أن يكون المتصل creator أو receiver للبطاقة.
+
+Path parameters:
+
+- `cardId` (`integer`, required)
+
+Body type: `SetCardLifecycleStatusRequest`
+
+- `status` (`string`, required): `active` أو `inactive` (غير حساس لحالة الأحرف؛ يُخزَّن lowercase).
+- `actingUserId` (`integer`, required): creator أو receiver.
+
+Response type: `ApiEnvelope<CardLifecycleStatusResponse>`
+
+`CardLifecycleStatusResponse`:
+
+- `cardId` (`integer`)
+- `status` (`string`)
+- `previousStatus` (`string`)
+
+Validation:
+
+- body مطلوب.
+- `actingUserId` يجب أن يكون أكبر من صفر.
+- `status` يجب أن يكون `active` أو `inactive`.
+
+Errors:
+
+- `400`: قيمة status غير صالحة أو body مفقود.
+- `403`: المستخدم غير مصرح.
+- `404`: البطاقة غير موجودة.
+
+Request example:
+
+```json
+{
+  "status": "inactive",
+  "actingUserId": 1
+}
+```
+
+Response example:
+
+```json
+{
+  "success": true,
+  "message": "Virtual card lifecycle status updated successfully.",
+  "data": {
+    "cardId": 31,
+    "status": "inactive",
+    "previousStatus": "active"
   },
   "meta": {
     "statusCode": 200,
