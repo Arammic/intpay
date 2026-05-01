@@ -1,9 +1,10 @@
-﻿using IntPay.Api.supabase;
+using IntPay.Api.supabase;
 using IntPay.Api.supabase.Models;
 using Supabase;
 using Supabase.Postgrest.Interfaces;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using static Supabase.Postgrest.Constants;
 
@@ -159,6 +160,7 @@ namespace IntPay.Api.Services
                     reason = "Invoice verification not required for this intent.",
                     isLockedByPendingInvoice = card.IsLockedByPendingInvoice,
                     isManuallyFrozen = card.IsManuallyFrozen,
+                    isRequestRefund = card.IsRequestRefund,
                     isSpendBlocked = spendBlocked,
                     cardLocked = spendBlocked
                 };
@@ -209,6 +211,7 @@ namespace IntPay.Api.Services
                 reason = llm.Reason,
                 isLockedByPendingInvoice = card.IsLockedByPendingInvoice,
                 isManuallyFrozen = card.IsManuallyFrozen,
+                isRequestRefund = card.IsRequestRefund,
                 isSpendBlocked = blocked,
                 cardLocked = blocked,
                 provider = llm.Provider,
@@ -434,6 +437,7 @@ namespace IntPay.Api.Services
                 Status = row.Status,
                 IsLockedByPendingInvoice = row.IsLockedByPendingInvoice,
                 IsManuallyFrozen = row.IsManuallyFrozen,
+                IsRequestRefund = row.IsRequestRefund,
             };
 
             var rich = intent.ToRichResponse(currentUserId: profileId, card: card, senderName: row.SenderName);
@@ -492,6 +496,7 @@ namespace IntPay.Api.Services
                 Status = row.Status,
                 IsLockedByPendingInvoice = row.IsLockedByPendingInvoice,
                 IsManuallyFrozen = row.IsManuallyFrozen,
+                IsRequestRefund = row.IsRequestRefund,
             };
 
             return intent.ToRichResponse(currentUserId: userId, card: card, senderName: row.SenderName);
@@ -558,6 +563,7 @@ namespace IntPay.Api.Services
                     Status = row.Status,
                     IsLockedByPendingInvoice = row.IsLockedByPendingInvoice,
                     IsManuallyFrozen = row.IsManuallyFrozen,
+                    IsRequestRefund = row.IsRequestRefund,
                 };
 
                 items.Add(intent.ToRichResponse(currentUserId: userId, card: card, senderName: row.SenderName));
@@ -598,9 +604,39 @@ namespace IntPay.Api.Services
                 cardId,
                 isManuallyFrozen = card.IsManuallyFrozen,
                 isLockedByPendingInvoice = card.IsLockedByPendingInvoice,
+                isRequestRefund = card.IsRequestRefund,
                 isSpendBlocked = card.IsLockedByPendingInvoice || card.IsManuallyFrozen,
                 previousManualFreeze = previous
             };
+        }
+
+        /// <summary>Sets <c>virtual_cards.is_request_refund</c> to true (sender/recipient only). Idempotent.</summary>
+        public async Task RequestRefundAsync(int cardId, int actingUserId)
+        {
+            var row = await _access.EnsureCanAccessCardAsync(cardId, actingUserId);
+
+            var card = await _client.From<VirtualCard>().Where(x => x.Id == cardId).Single();
+            if (card == null)
+                throw new KeyNotFoundException("Virtual card not found");
+
+            if (card.IsRequestRefund)
+                return;
+
+            card.IsRequestRefund = true;
+            await _client.From<VirtualCard>().Update(card);
+
+            var now = DateTime.UtcNow;
+            await _audit.InsertAsync(new AuditLog
+            {
+                CardId = card.Id,
+                EntityId = row.IntentId,
+                Action = "refund_requested",
+                Decision = "info",
+                Reason = $"Refund requested by user {actingUserId}",
+                TransactionAmount = 0,
+                CreatedAt = now,
+                OccurredAt = now
+            });
         }
 
         public async Task<DashboardMetricsResponse> GetDashboardMetricsAsync(int userId)
@@ -1031,6 +1067,7 @@ namespace IntPay.Api.Services
                 CardStatus = string.Empty,
                 IsLockedByPendingInvoice = false,
                 IsManuallyFrozen = false,
+                IsRequestRefund = false,
                 IsSpendBlocked = false,
                 SenderName = null,
                 ActivityType = activityType,
@@ -1103,6 +1140,7 @@ namespace IntPay.Api.Services
                 CardStatus = card.Status,
                 IsLockedByPendingInvoice = card.IsLockedByPendingInvoice,
                 IsManuallyFrozen = card.IsManuallyFrozen,
+                IsRequestRefund = card.IsRequestRefund,
                 IsSpendBlocked = card.IsLockedByPendingInvoice || card.IsManuallyFrozen,
                 SenderName = card.SenderName,
                 ActivityType = activityType,
@@ -1189,9 +1227,16 @@ namespace IntPay.Api.Services
     // PagedCardsResponse
     public class PagedCardsResponse
     {
+        [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
         public int Total { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
         public int Limit { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
         public int Offset { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
         public List<IntentWithCardResponse> Items { get; set; } = new();
     }
 }

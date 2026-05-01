@@ -91,6 +91,7 @@ public sealed class UserActivityItem
     public string CardStatus { get; init; } = string.Empty;
     public bool IsLockedByPendingInvoice { get; init; }
     public bool IsManuallyFrozen { get; init; }
+    public bool IsRequestRefund { get; init; }
     public bool IsSpendBlocked { get; init; }
     public string? SenderName { get; init; }
 

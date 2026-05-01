@@ -1,114 +1,158 @@
-﻿using IntPay.Api.supabase.Models;
+using System.Text.Json.Serialization;
+using IntPay.Api.supabase.Models;
 
 namespace IntPay.Api.supabase;
 
 public record IntentWithCardResponse
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public int IntentId { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string City { get; init; } = string.Empty;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string Country { get; init; } = string.Empty;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? Description { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public List<MccItem> MccList { get; init; } = new();
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public bool RequiredInvoiceProve { get; init; }
 
-    // The Rich Card object
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public CardDetailsResponse Card { get; init; } = null!;
 }
 
 public record CardDetailsResponse
 {
-    // Identity & Database Info
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public int Id { get; init; }
-    public string StripeId { get; init; } = string.Empty;
-    public DateTime CreatedAt { get; init; }
-    public string Status { get; init; } = "LOCKED";
 
-    /// <summary>True when the last required invoice is missing or failed automated verification.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public string StripeId { get; init; } = string.Empty;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public DateTime CreatedAt { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public string Status { get; init; } = "locked";
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public bool IsLockedByPendingInvoice { get; init; }
 
-    /// <summary>True when sender or recipient froze the card via manual governance (POST lock-state).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public bool IsManuallyFrozen { get; init; }
 
-    /// <summary>True when any governance rule blocks spend (invoice pending or manual freeze).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public bool IsSpendBlocked { get; init; }
 
-    // Physical Card Details
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public bool IsRequestRefund { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string CardNumber { get; init; } = string.Empty;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string Last4 { get; init; } = string.Empty;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string Cvv { get; init; } = string.Empty;
-    public string ExpiryDate { get; init; } = string.Empty; // Format: "MM/YY"
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public string ExpiryDate { get; init; } = string.Empty;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public int ExpiryMonth { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public int ExpiryYear { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string CardholderName { get; init; } = string.Empty;
 
-    // Financial & Usage State
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public decimal Amount { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public decimal RemainingAmount { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public int UseTimes { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public int UsesLeft { get; init; }
 
-    // Time-based Rich Fields (Countdown Logic)
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public DateTime? UnLockedAt { get; init; }
-    public long MinutesToUnlock { get; init; }
-    public long HoursToUnlock { get; init; }
-    public long DaysToUnlock { get; init; }
-    public string TimeRemainingLeveled { get; init; } = string.Empty;
-    public int DaysLocked { get; init; } = 0; // Total duration of the lock
 
-    // Relationship Context
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public long MinutesToUnlock { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public long HoursToUnlock { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public long DaysToUnlock { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public string TimeRemainingLeveled { get; init; } = string.Empty;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public int DaysLocked { get; init; } = 0;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public int CreatorId { get; init; }
-    public int RetrieveId { get; init; } // The Receiver/User ID
-    public string Type { get; init; } = "self"; // "self" or "sent"
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public int RetrieveId { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public string Type { get; init; } = "self";
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? SenderName { get; init; }
 }
 
 public record MccItem(
-    string Code,
-    string Name,
-    string Group
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] string Code,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] string Name,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] string Group
 );
 
 public static class MccMapper
 {
     private static readonly Dictionary<string, (string Name, string Group)> MccLookup = new()
 {
-    // --- Food & Drink ---
     { "5411", ("Grocery Stores", "Food & Drink") },
     { "5812", ("Restaurants", "Food & Drink") },
     { "5814", ("Fast Food", "Food & Drink") },
     { "5813", ("Bars & Nightlife", "Food & Drink") },
     { "5499", ("Convenience Stores", "Food & Drink") },
-
-    // --- Transport ---
     { "4121", ("Taxis & Rideshare", "Transport") },
     { "4111", ("Public Transit", "Transport") },
     { "5541", ("Gas Stations", "Transport") },
     { "7523", ("Parking", "Transport") },
     { "4511", ("Airlines", "Transport") },
     { "7011", ("Hotels", "Transport") },
-
-    // --- Shopping ---
     { "5732", ("Electronics", "Shopping") },
     { "5651", ("Clothing", "Shopping") },
     { "5912", ("Pharmacies", "Shopping") },
     { "5942", ("Bookstores", "Shopping") },
     { "5311", ("Department Stores", "Shopping") },
     { "5945", ("Hobby & Toy Stores", "Shopping") },
-
-    // --- Health ---
     { "8011", ("Doctors", "Health") },
     { "8021", ("Dentists", "Health") },
     { "7298", ("Spa & Wellness", "Health") },
     { "7997", ("Gyms", "Health") },
-
-    // --- Services ---
     { "4900", ("Utilities", "Services") },
     { "4814", ("Telecom", "Services") },
     { "5968", ("Subscriptions", "Services") },
     { "8299", ("Education", "Services") },
-    { "7372", ("Computer Programming", "Services") }, // أضفتها بناءً على الكود القديم لديك
-
-    // --- Entertainment ---
+    { "7372", ("Computer Programming", "Services") },
     { "7832", ("Movie Theaters", "Entertainment") },
     { "7929", ("Concerts & Live Events", "Entertainment") },
     { "7994", ("Video Games", "Entertainment") }
@@ -136,14 +180,12 @@ public static class IntentMappingExtensions
         VirtualCard card,
         string? senderName = null)
     {
-        // 1. Time Calculations
         var now = DateTime.UtcNow;
         var unlockDate = intent.FirstDateToUser ?? now;
         var timeSpan = unlockDate - now;
         var remaining = timeSpan.Ticks > 0 ? timeSpan : TimeSpan.Zero;
         var totalLockDuration = unlockDate - intent.CreatedAt;
 
-        // 2. Relationship Logic
         string type;
         if (intent.CreatorId == currentUserId && intent.ReceiverId == currentUserId)
         {
@@ -157,7 +199,6 @@ public static class IntentMappingExtensions
         {
             type = "sent";
         }
-        // 3. Build the Response
         return new IntentWithCardResponse
         {
             IntentId = intent.Id,
@@ -175,23 +216,18 @@ public static class IntentMappingExtensions
                 IsLockedByPendingInvoice = card.IsLockedByPendingInvoice,
                 IsManuallyFrozen = card.IsManuallyFrozen,
                 IsSpendBlocked = card.IsLockedByPendingInvoice || card.IsManuallyFrozen,
+                IsRequestRefund = card.IsRequestRefund,
                 CardNumber = card.CardNumber ?? string.Empty,
                 Last4 = card.Last4 ?? string.Empty,
                 Cvv = card.CardCvv ?? string.Empty,
-
-                // Formatted Expiry
                 ExpiryDate = $"{card.ExpMonth ?? 0:D2}/{(card.ExpYear ?? 0) % 100}",
                 ExpiryMonth = card.ExpMonth ?? 0,
                 ExpiryYear = card.ExpYear ?? 1999,
                 CardholderName = card.CardholderName ?? string.Empty,
-
-                // Financials
                 Amount = intent.Amount,
                 RemainingAmount = intent.RemainingAmount,
                 UseTimes = intent.UseTimes,
                 UsesLeft = intent.UsesLeft,
-
-                // Rich Time Data
                 UnLockedAt = unlockDate,
                 MinutesToUnlock = (long)remaining.TotalMinutes,
                 HoursToUnlock = (long)remaining.TotalHours,
@@ -200,13 +236,10 @@ public static class IntentMappingExtensions
                     ? $"{(remaining.Days > 0 ? remaining.Days + "d " : "")}{remaining.Hours}h {remaining.Minutes}m"
                     : "Available Now",
                 DaysLocked = totalLockDuration.Days > 0 ? totalLockDuration.Days : 0,
-
-                // Relationship Context
                 CreatorId = intent.CreatorId,
                 RetrieveId = intent.ReceiverId,
                 Type = type,
                 SenderName = senderName
-                
             }
         };
     }

@@ -43,4 +43,7 @@ public class VirtualCard : BaseModel
 
     [Column("is_manually_frozen")]
     public bool IsManuallyFrozen { get; set; }
+
+    [Column("is_request_refund")]
+    public bool IsRequestRefund { get; set; }
 }

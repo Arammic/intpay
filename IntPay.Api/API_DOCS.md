@@ -186,6 +186,7 @@ Base path: `/api/v1`
 - `isLockedByPendingInvoice` (`boolean`)
 - `isManuallyFrozen` (`boolean`)
 - `isSpendBlocked` (`boolean`): true إذا كان يوجد قفل فاتورة أو تجميد يدوي.
+- `isRequestRefund` (`boolean`): true إذا سجّل المرسل أو المستلم طلب استرداد عبر `POST /cards/{cardId}/request-refund`.
 - `cardNumber` (`string`): رقم البطاقة كاملًا في MVP الحالي.
 - `last4` (`string`)
 - `cvv` (`string`): CVV كامل في MVP الحالي.
@@ -228,7 +229,7 @@ Base path: `/api/v1`
 - `country` (`string | null`): حاليًا لا يأتي من `AuditLog` model إلا إذا أضيف لاحقًا.
 - `externalId` (`string | null`): حاليًا لا يأتي من `AuditLog` model إلا إذا أضيف لاحقًا.
 - `entityId` (`integer | null`): غالبًا intent id عند أحداث governance.
-- `action` (`string | null`): مثل `authorization`, `intent_updated`, `invoice_verification`, `card_manual_freeze_set`.
+- `action` (`string | null`): مثل `authorization`, `intent_updated`, `invoice_verification`, `card_manual_freeze_set`, `refund_requested`.
 - `occurredAt` (`string | null`, date-time)
 
 ### `PagedCardsResponse`
@@ -355,6 +356,7 @@ Base path: `/api/v1`
 - `isLockedByPendingInvoice` (`boolean`)
 - `isManuallyFrozen` (`boolean`)
 - `isSpendBlocked` (`boolean`)
+- `isRequestRefund` (`boolean`): نفس علم البطاقة؛ لا يُحسب ضمن `isSpendBlocked`.
 - `senderName` (`string | null`)
 - `activityType` (`string`)
 - `title` (`string`): عنوان قصير مُشتق من السجل؛ للدفع مع `merchantName` يكون غالبًا `Approved at {merchantName}` أو `Declined at {merchantName}`؛ لأحداث أخرى انظر منطق العناوين في `IntPayService.BuildActivityTitle`.
@@ -661,6 +663,7 @@ Response example:
       "isLockedByPendingInvoice": true,
       "isManuallyFrozen": false,
       "isSpendBlocked": true,
+      "isRequestRefund": false,
       "cardNumber": "4111123412341234",
       "last4": "1234",
       "cvv": "123",
@@ -750,6 +753,9 @@ Response example:
       "id": 31,
       "cardNumber": "4111123412341234",
       "cvv": "123",
+      "isLockedByPendingInvoice": true,
+      "isManuallyFrozen": false,
+      "isRequestRefund": false,
       "isSpendBlocked": true
     },
     "rich": {
@@ -763,7 +769,11 @@ Response example:
         "id": 31,
         "last4": "1234",
         "useTimes": 99999,
-        "usesLeft": 99999
+        "usesLeft": 99999,
+        "isLockedByPendingInvoice": true,
+        "isManuallyFrozen": false,
+        "isRequestRefund": false,
+        "isSpendBlocked": true
       }
     }
   },
@@ -903,6 +913,9 @@ Response example:
         "cvv": "123",
         "useTimes": 99999,
         "usesLeft": 99999,
+        "isLockedByPendingInvoice": true,
+        "isManuallyFrozen": false,
+        "isRequestRefund": false,
         "isSpendBlocked": true
       }
     },
@@ -990,6 +1003,59 @@ Response example:
 }
 ```
 
+### Request Card Refund
+
+Endpoint: `POST /cards/{cardId}/request-refund`
+
+الوصف: يضبط `is_request_refund` على البطافة إلى `true` (عملية أحادية الاتجاه؛ متكررة بدون خطأ إذا كانت القيمة بالفعل true). لا يُعاد في الاستجابة كائن البطاقة.
+
+Path parameters:
+
+- `cardId` (`integer`, required)
+
+Body type: `RequestRefundBody`
+
+- `actingUserId` (`integer`, required): creator أو receiver.
+
+Response: غلاف نجاح بدون `data`:
+
+- `success` (`boolean`)
+- `message` (`string`)
+- `meta` (`object`): `statusCode`, `version`, `timestamp`
+
+Validation:
+
+- body مطلوب.
+- `actingUserId` يجب أن يكون أكبر من صفر.
+
+Errors:
+
+- `400`: body مفقود أو `actingUserId` غير صالح.
+- `403`: المستخدم غير مصرح.
+- `404`: البطاقة غير موجودة.
+
+Request example:
+
+```json
+{
+  "actingUserId": 1
+}
+```
+
+Response example:
+
+```json
+{
+  "success": true,
+  "message": "Refund request recorded successfully.",
+  "meta": {
+    "statusCode": 200,
+    "version": "v1",
+    "timestamp": "2026-05-01T02:00:00.0000000+00:00"
+  }
+}
+```
+
 ### Set Card Manual Freeze State
 
 Endpoint: `POST /cards/{cardId}/lock-state`
@@ -1012,6 +1078,7 @@ Response type: `ApiEnvelope<CardManualFreezeStateResponse>`
 - `cardId` (`integer`)
 - `isManuallyFrozen` (`boolean`)
 - `isLockedByPendingInvoice` (`boolean`)
+- `isRequestRefund` (`boolean`)
 - `isSpendBlocked` (`boolean`)
 - `previousManualFreeze` (`boolean`)
 
@@ -1045,6 +1112,7 @@ Response example:
     "cardId": 31,
     "isManuallyFrozen": true,
     "isLockedByPendingInvoice": false,
+    "isRequestRefund": false,
     "isSpendBlocked": true,
     "previousManualFreeze": false
   },
@@ -1331,6 +1399,7 @@ Response example:
         "isLockedByPendingInvoice": false,
         "isManuallyFrozen": false,
         "isSpendBlocked": false,
+        "isRequestRefund": false,
         "senderName": null,
         "activityType": "authorization",
         "title": "Approved at Riyadh Taxi",
@@ -1488,8 +1557,8 @@ Body type: `VerifyInvoiceRequest`
 
 Response type: `ApiEnvelope` حيث `data` كائن يعكس تنفيذ الخادم الحالي (ليس `intentId`/`cardId`/`approved`):
 
-- إذا كان `requiredInvoiceProve` على الـ intent = false: يُرجع `{ skippedVerification, isMatch, reason, isLockedByPendingInvoice, isManuallyFrozen, isSpendBlocked, cardLocked }`.
-- وإلا بعد استدعاء نموذج التحقق: `{ isMatch, reason, isLockedByPendingInvoice, isManuallyFrozen, isSpendBlocked, cardLocked, provider, invoiceCity, invoiceCountry, hasGps, gpsLatitude, gpsLongitude, metadataCity, metadataCountry }` (بعض الحقول قد تكون `null` حسب المزود).
+- إذا كان `requiredInvoiceProve` على الـ intent = false: يُرجع `{ skippedVerification, isMatch, reason, isLockedByPendingInvoice, isManuallyFrozen, isRequestRefund, isSpendBlocked, cardLocked }`.
+- وإلا بعد استدعاء نموذج التحقق: `{ isMatch, reason, isLockedByPendingInvoice, isManuallyFrozen, isRequestRefund, isSpendBlocked, cardLocked, provider, invoiceCity, invoiceCountry, hasGps, gpsLatitude, gpsLongitude, metadataCity, metadataCountry }` (بعض الحقول قد تكون `null` حسب المزود).
 
 Validation:
 
@@ -1525,6 +1594,7 @@ Response example:
     "reason": "Invoice accepted.",
     "isLockedByPendingInvoice": false,
     "isManuallyFrozen": false,
+    "isRequestRefund": false,
     "isSpendBlocked": false,
     "cardLocked": false,
     "provider": "gemini",

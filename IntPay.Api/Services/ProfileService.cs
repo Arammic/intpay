@@ -361,6 +361,7 @@ public async Task<List<object>> SearchProfilesByName(string name)
                 IsLockedByPendingInvoice = view.IsLockedByPendingInvoice,
                 IsManuallyFrozen = view.IsManuallyFrozen,
                 IsSpendBlocked = view.IsLockedByPendingInvoice || view.IsManuallyFrozen,
+                IsRequestRefund = view.IsRequestRefund,
 
                 // Physical Details
                 CardNumber = view.CardNumber,
