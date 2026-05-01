@@ -1,6 +1,6 @@
 # API v1 — gap endpoints (live UI alignment)
 
-Base path: `api/v1`. Successful responses use `{ success, message?, data, meta? }` unless noted.
+Base path: `api/v1`. Successful responses use `{ success, message, data, meta }` with `meta` containing `statusCode`, `version`, and `timestamp` for all v1 minimal routes **except** `POST /intents/create`, which returns `{ data, message, status }` only (HTTP 201).
 
 ## Virtual card governance flags (breaking JSON)
 

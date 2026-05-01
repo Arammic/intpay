@@ -716,7 +716,7 @@ namespace IntPay.Api.Services
             var limit = Math.Clamp(query.Limit, 1, 1000);
             var offset = Math.Max(0, query.Offset);
             var role = NormalizeActivityRole(query.Role);
-            Console.WriteLine($"[Activities] userId={userId}, role={role}, limit={limit}, offset={offset}, decision={query.Decision ?? "all"}, action={query.Action ?? "all"}");
+            Console.WriteLine($"[Activities] userId={userId}, role={role}, limit={limit}, offset={offset}, decision={query.Decision ?? "all"}, action={query.Action ?? "all"}, entityType={query.EntityType ?? "all"}, outcome={query.Outcome ?? "all"}");
 
             var filters = new List<IPostgrestQueryFilter>
             {
@@ -732,59 +732,91 @@ namespace IntPay.Api.Services
                 .GroupBy(c => c.CardId)
                 .Select(g => g.First())
                 .ToList();
+            var visibleByCardId = visibleCards.ToDictionary(c => c.CardId);
             Console.WriteLine($"[Activities] userId={userId}, visibleCards={visibleCards.Count}");
 
-            if (visibleCards.Count == 0)
+            var cardLogs = new List<AuditLog>();
+            if (visibleCards.Count > 0)
             {
-                Console.WriteLine($"[Activities] userId={userId}, no visible cards for role={role}");
-                return new UserLatestActivitiesResponse
-                {
-                    UserId = userId,
-                    Limit = limit,
-                    Offset = offset,
-                    Filters = BuildActivityFiltersEcho(query, role)
-                };
+                var logFilters = visibleCards
+                    .Select<RichIntentCardView, IPostgrestQueryFilter>(c => new Supabase.Postgrest.QueryFilter("card_id", Operator.Equals, c.CardId))
+                    .ToList();
+
+                var logsQuery = _client.From<AuditLog>().Or(logFilters);
+                if (!string.IsNullOrWhiteSpace(query.Decision))
+                    logsQuery = logsQuery.Filter("decision", Operator.Equals, query.Decision.Trim());
+                if (!string.IsNullOrWhiteSpace(query.Action))
+                    logsQuery = logsQuery.Filter("action", Operator.Equals, query.Action.Trim());
+                if (!string.IsNullOrWhiteSpace(query.Mcc))
+                    logsQuery = logsQuery.Filter("mcc", Operator.Equals, query.Mcc.Trim());
+                if (query.FromUtc.HasValue)
+                    logsQuery = logsQuery.Filter("created_at", Operator.GreaterThanOrEqual, query.FromUtc.Value.ToUniversalTime().ToString("O"));
+                if (query.ToUtc.HasValue)
+                    logsQuery = logsQuery.Filter("created_at", Operator.LessThanOrEqual, query.ToUtc.Value.ToUniversalTime().ToString("O"));
+                if (query.MinAmount.HasValue)
+                    logsQuery = logsQuery.Filter("transaction_amount", Operator.GreaterThanOrEqual, query.MinAmount.Value.ToString(CultureInfo.InvariantCulture));
+                if (query.MaxAmount.HasValue)
+                    logsQuery = logsQuery.Filter("transaction_amount", Operator.LessThanOrEqual, query.MaxAmount.Value.ToString(CultureInfo.InvariantCulture));
+                if (!query.IncludeInfo)
+                    logsQuery = logsQuery.Filter("decision", Operator.NotEqual, "info");
+
+                var logsResp = await logsQuery.Get();
+                cardLogs = (logsResp.Models ?? new List<AuditLog>())
+                    .Where(l => l.CardId.HasValue && visibleByCardId.ContainsKey(l.CardId.Value))
+                    .Where(l => !query.IntentId.HasValue || (l.EntityId ?? visibleByCardId[l.CardId!.Value].IntentId) == query.IntentId.Value)
+                    .Where(l => string.IsNullOrWhiteSpace(query.Merchant) || (l.MerchantName?.Contains(query.Merchant.Trim(), StringComparison.OrdinalIgnoreCase) ?? false))
+                    .Where(l => string.IsNullOrWhiteSpace(query.City) || (l.City?.Contains(query.City.Trim(), StringComparison.OrdinalIgnoreCase) ?? false))
+                    .ToList();
             }
 
-            var visibleByCardId = visibleCards.ToDictionary(c => c.CardId);
-            var logFilters = visibleCards
-                .Select<RichIntentCardView, IPostgrestQueryFilter>(c => new Supabase.Postgrest.QueryFilter("card_id", Operator.Equals, c.CardId))
+            var profileQuery = _client.From<AuditLog>().Filter("user_id", Operator.Equals, userId);
+            if (!string.IsNullOrWhiteSpace(query.Decision))
+                profileQuery = profileQuery.Filter("decision", Operator.Equals, query.Decision.Trim());
+            if (!string.IsNullOrWhiteSpace(query.Action))
+                profileQuery = profileQuery.Filter("action", Operator.Equals, query.Action.Trim());
+            if (!string.IsNullOrWhiteSpace(query.Mcc))
+                profileQuery = profileQuery.Filter("mcc", Operator.Equals, query.Mcc.Trim());
+            if (query.FromUtc.HasValue)
+                profileQuery = profileQuery.Filter("created_at", Operator.GreaterThanOrEqual, query.FromUtc.Value.ToUniversalTime().ToString("O"));
+            if (query.ToUtc.HasValue)
+                profileQuery = profileQuery.Filter("created_at", Operator.LessThanOrEqual, query.ToUtc.Value.ToUniversalTime().ToString("O"));
+            if (query.MinAmount.HasValue)
+                profileQuery = profileQuery.Filter("transaction_amount", Operator.GreaterThanOrEqual, query.MinAmount.Value.ToString(CultureInfo.InvariantCulture));
+            if (query.MaxAmount.HasValue)
+                profileQuery = profileQuery.Filter("transaction_amount", Operator.LessThanOrEqual, query.MaxAmount.Value.ToString(CultureInfo.InvariantCulture));
+            if (!query.IncludeInfo)
+                profileQuery = profileQuery.Filter("decision", Operator.NotEqual, "info");
+
+            var profileResp = await profileQuery.Get();
+            var profileLogs = (profileResp.Models ?? new List<AuditLog>())
+                .Where(l => l.CardId == null)
+                .Where(l => string.IsNullOrWhiteSpace(query.Merchant)
+                    || (l.MerchantName?.Contains(query.Merchant.Trim(), StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (l.Note?.Contains(query.Merchant.Trim(), StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (l.Reason?.Contains(query.Merchant.Trim(), StringComparison.OrdinalIgnoreCase) ?? false))
+                .Where(l => string.IsNullOrWhiteSpace(query.City) || (l.City?.Contains(query.City.Trim(), StringComparison.OrdinalIgnoreCase) ?? false))
                 .ToList();
 
-            var logsQuery = _client.From<AuditLog>().Or(logFilters);
-            if (!string.IsNullOrWhiteSpace(query.Decision))
-                logsQuery = logsQuery.Filter("decision", Operator.Equals, query.Decision.Trim());
-            if (!string.IsNullOrWhiteSpace(query.Action))
-                logsQuery = logsQuery.Filter("action", Operator.Equals, query.Action.Trim());
-            if (!string.IsNullOrWhiteSpace(query.Mcc))
-                logsQuery = logsQuery.Filter("mcc", Operator.Equals, query.Mcc.Trim());
-            if (query.FromUtc.HasValue)
-                logsQuery = logsQuery.Filter("created_at", Operator.GreaterThanOrEqual, query.FromUtc.Value.ToUniversalTime().ToString("O"));
-            if (query.ToUtc.HasValue)
-                logsQuery = logsQuery.Filter("created_at", Operator.LessThanOrEqual, query.ToUtc.Value.ToUniversalTime().ToString("O"));
-            if (query.MinAmount.HasValue)
-                logsQuery = logsQuery.Filter("transaction_amount", Operator.GreaterThanOrEqual, query.MinAmount.Value.ToString(CultureInfo.InvariantCulture));
-            if (query.MaxAmount.HasValue)
-                logsQuery = logsQuery.Filter("transaction_amount", Operator.LessThanOrEqual, query.MaxAmount.Value.ToString(CultureInfo.InvariantCulture));
-            if (!query.IncludeInfo)
-                logsQuery = logsQuery.Filter("decision", Operator.NotEqual, "info");
-
-            var logsResp = await logsQuery.Get();
-            var filteredLogs = (logsResp.Models ?? new List<AuditLog>())
-                .Where(l => l.CardId.HasValue && visibleByCardId.ContainsKey(l.CardId.Value))
-                .Where(l => !query.IntentId.HasValue || (l.EntityId ?? visibleByCardId[l.CardId!.Value].IntentId) == query.IntentId.Value)
-                .Where(l => string.IsNullOrWhiteSpace(query.Merchant) || (l.MerchantName?.Contains(query.Merchant.Trim(), StringComparison.OrdinalIgnoreCase) ?? false))
-                .Where(l => string.IsNullOrWhiteSpace(query.City) || (l.City?.Contains(query.City.Trim(), StringComparison.OrdinalIgnoreCase) ?? false))
+            var combined = cardLogs
+                .Concat(profileLogs)
+                .GroupBy(l => l.Id)
+                .Select(g => g.First())
                 .OrderByDescending(l => l.CreatedAt)
                 .ToList();
 
-            var total = filteredLogs.Count;
-            var page = filteredLogs
-                .Skip(offset)
-                .Take(limit)
-                .Select(l => BuildActivityItem(userId, l, visibleByCardId[l.CardId!.Value]))
-                .ToList();
-            Console.WriteLine($"[Activities] userId={userId}, filteredLogs={total}, returned={page.Count}");
+            combined = ApplyActivityEntityTypeFilter(combined, query.EntityType);
+            combined = ApplyActivityOutcomeFilter(combined, query.Outcome);
+            combined = ApplyActivityIntentFilter(combined, query.IntentId, visibleByCardId);
+
+            var total = combined.Count;
+            var pageLogs = combined.Skip(offset).Take(limit).ToList();
+            var page = pageLogs.Select(l =>
+            {
+                if (l.CardId.HasValue && visibleByCardId.TryGetValue(l.CardId.Value, out var card))
+                    return BuildActivityItem(userId, l, card);
+                return BuildProfileActivityItem(userId, l);
+            }).ToList();
+            Console.WriteLine($"[Activities] userId={userId}, combined={total}, returned={page.Count}");
 
             return new UserLatestActivitiesResponse
             {
@@ -795,18 +827,25 @@ namespace IntPay.Api.Services
                 Filters = BuildActivityFiltersEcho(query, role),
                 Summary = new UserLatestActivitiesSummary
                 {
-                    ApprovedCount = filteredLogs.Count(l => string.Equals(l.Decision, "approved", StringComparison.OrdinalIgnoreCase)),
-                    DeclinedCount = filteredLogs.Count(l => string.Equals(l.Decision, "declined", StringComparison.OrdinalIgnoreCase)),
-                    InfoCount = filteredLogs.Count(l => string.Equals(l.Decision, "info", StringComparison.OrdinalIgnoreCase)),
-                    ApprovedSpendTotal = filteredLogs
+                    ApprovedCount = combined.Count(l => string.Equals(l.Decision, "approved", StringComparison.OrdinalIgnoreCase)),
+                    DeclinedCount = combined.Count(l => string.Equals(l.Decision, "declined", StringComparison.OrdinalIgnoreCase)),
+                    InfoCount = combined.Count(l => string.Equals(l.Decision, "info", StringComparison.OrdinalIgnoreCase)),
+                    ApprovedSpendTotal = combined
                         .Where(l => string.Equals(l.Decision, "approved", StringComparison.OrdinalIgnoreCase))
                         .Sum(l => l.TransactionAmount),
-                    DeclinedAmountTotal = filteredLogs
+                    DeclinedAmountTotal = combined
                         .Where(l => string.Equals(l.Decision, "declined", StringComparison.OrdinalIgnoreCase))
                         .Sum(l => l.TransactionAmount),
-                    DistinctCards = filteredLogs.Where(l => l.CardId.HasValue).Select(l => l.CardId!.Value).Distinct().Count(),
-                    DistinctIntents = filteredLogs
-                        .Select(l => l.EntityId ?? (l.CardId.HasValue ? visibleByCardId[l.CardId.Value].IntentId : (int?)null))
+                    DistinctCards = combined.Where(l => l.CardId.HasValue).Select(l => l.CardId!.Value).Distinct().Count(),
+                    DistinctIntents = combined
+                        .Select(l =>
+                        {
+                            if (l.CardId.HasValue && visibleByCardId.TryGetValue(l.CardId.Value, out var c))
+                                return l.EntityId ?? c.IntentId;
+                            if (string.Equals(l.EntityType, "intent", StringComparison.OrdinalIgnoreCase))
+                                return l.EntityId;
+                            return (int?)null;
+                        })
                         .Where(id => id.HasValue)
                         .Select(id => id!.Value)
                         .Distinct()
@@ -875,6 +914,8 @@ namespace IntPay.Api.Services
         {
             Decision = string.IsNullOrWhiteSpace(query.Decision) ? null : query.Decision.Trim(),
             Action = string.IsNullOrWhiteSpace(query.Action) ? null : query.Action.Trim(),
+            EntityType = string.IsNullOrWhiteSpace(query.EntityType) ? null : query.EntityType.Trim(),
+            Outcome = string.IsNullOrWhiteSpace(query.Outcome) ? null : query.Outcome.Trim(),
             CardId = query.CardId,
             IntentId = query.IntentId,
             FromUtc = query.FromUtc,
@@ -888,10 +929,130 @@ namespace IntPay.Api.Services
             IncludeInfo = query.IncludeInfo
         };
 
+        private static List<AuditLog> ApplyActivityEntityTypeFilter(List<AuditLog> logs, string? entityType)
+        {
+            if (string.IsNullOrWhiteSpace(entityType))
+                return logs;
+            var want = entityType.Trim().ToLowerInvariant();
+            return logs
+                .Where(l => string.Equals(ResolveActivityEntityType(l), want, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
+        private static List<AuditLog> ApplyActivityOutcomeFilter(List<AuditLog> logs, string? outcome)
+        {
+            if (string.IsNullOrWhiteSpace(outcome))
+                return logs;
+            var want = outcome.Trim().ToLowerInvariant();
+            return logs
+                .Where(l => string.Equals(ResolveActivityOutcome(l), want, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
+        private static List<AuditLog> ApplyActivityIntentFilter(
+            List<AuditLog> logs,
+            int? intentId,
+            IReadOnlyDictionary<int, RichIntentCardView> visibleByCardId)
+        {
+            if (!intentId.HasValue)
+                return logs;
+            return logs.Where(l =>
+            {
+                if (l.CardId.HasValue && visibleByCardId.TryGetValue(l.CardId.Value, out var c))
+                    return c.IntentId == intentId.Value;
+                return string.Equals(l.EntityType, "intent", StringComparison.OrdinalIgnoreCase)
+                    && l.EntityId == intentId.Value;
+            }).ToList();
+        }
+
+        /// <summary>Maps an audit row to a coarse entity bucket for filtering (profile | intent | virtual_card | transaction).</summary>
+        private static string ResolveActivityEntityType(AuditLog log)
+        {
+            if (!string.IsNullOrWhiteSpace(log.EntityType))
+                return log.EntityType.Trim().ToLowerInvariant();
+            var a = (log.Action ?? string.Empty).Trim().ToLowerInvariant();
+            if (a == "authorization")
+                return "transaction";
+            if (a is "card_created" or "card_status_changed" or "virtual_card_issued" or "card_manual_freeze_set" or "invoice_verification")
+                return "virtual_card";
+            if (a.Contains("intent", StringComparison.OrdinalIgnoreCase) || a == "budget_intent_created")
+                return "intent";
+            if (a.StartsWith("balance_", StringComparison.OrdinalIgnoreCase) || a == "wallet_credit")
+                return "profile";
+            return log.CardId.HasValue ? "virtual_card" : "profile";
+        }
+
+        /// <summary>Maps an audit row to success | failed | info using <c>audit_logs.status</c> when set, else <c>decision</c>.</summary>
+        private static string ResolveActivityOutcome(AuditLog log)
+        {
+            if (!string.IsNullOrWhiteSpace(log.OutcomeStatus))
+                return log.OutcomeStatus.Trim().ToLowerInvariant();
+            if (string.Equals(log.Decision, "approved", StringComparison.OrdinalIgnoreCase))
+                return "success";
+            if (string.Equals(log.Decision, "declined", StringComparison.OrdinalIgnoreCase))
+                return "failed";
+            return "info";
+        }
+
+        private static UserActivityItem BuildProfileActivityItem(int userId, AuditLog log)
+        {
+            var activityType = !string.IsNullOrWhiteSpace(log.Action) ? log.Action! : log.Decision;
+            var title = BuildActivityTitle(log);
+            var subtitle = string.Join(" · ", new[]
+            {
+                log.Note,
+                log.Reason,
+                log.City
+            }.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct());
+
+            return new UserActivityItem
+            {
+                Id = log.Id,
+                CardId = null,
+                IntentId = string.Equals(log.EntityType, "intent", StringComparison.OrdinalIgnoreCase) ? log.EntityId : null,
+                Action = log.Action,
+                Decision = log.Decision,
+                Reason = log.Reason,
+                TransactionAmount = log.TransactionAmount,
+                MerchantName = log.MerchantName,
+                Mcc = log.Mcc,
+                City = log.City,
+                CreatedAt = log.CreatedAt,
+                OccurredAt = log.OccurredAt,
+                CreatorId = userId,
+                ReceiverId = userId,
+                Role = "self",
+                IntentDescription = null,
+                Category = null,
+                Country = null,
+                IntentAmount = 0,
+                RemainingAmount = 0,
+                CardLast4 = string.Empty,
+                CardStatus = string.Empty,
+                IsLockedByPendingInvoice = false,
+                IsManuallyFrozen = false,
+                IsSpendBlocked = false,
+                SenderName = null,
+                ActivityType = activityType,
+                Title = title,
+                Subtitle = subtitle,
+                Severity = BuildActivitySeverity(log, null),
+                AmountLabel = log.TransactionAmount.ToString("$0.00", CultureInfo.InvariantCulture),
+                EntityType = ResolveActivityEntityType(log),
+                Outcome = ResolveActivityOutcome(log)
+            };
+        }
+
         private static string NormalizeActivityRole(string? role)
         {
             var value = role?.Trim().ToLowerInvariant();
-            return value is "sender" or "receiver" or "self" ? value : "all";
+            return value switch
+            {
+                "sender" or "creator" or "sent" => "sender",
+                "receiver" or "recipient" or "received" => "receiver",
+                "self" => "self",
+                _ => "all"
+            };
         }
 
         private static bool ActivityRoleMatches(RichIntentCardView card, int userId, string role) => role switch
@@ -948,7 +1109,9 @@ namespace IntPay.Api.Services
                 Title = title,
                 Subtitle = subtitle,
                 Severity = BuildActivitySeverity(log, card),
-                AmountLabel = log.TransactionAmount.ToString("$0.00", CultureInfo.InvariantCulture)
+                AmountLabel = log.TransactionAmount.ToString("$0.00", CultureInfo.InvariantCulture),
+                EntityType = ResolveActivityEntityType(log),
+                Outcome = ResolveActivityOutcome(log)
             };
         }
 
@@ -965,6 +1128,9 @@ namespace IntPay.Api.Services
 
             return log.Action switch
             {
+                "balance_added" => "Vault balance increased",
+                "balance_deducted" => "Vault balance decreased",
+                "wallet_credit" => "Wallet credited",
                 "invoice_verification" => "Invoice verification",
                 "card_manual_freeze_set" => "Manual freeze updated",
                 "budget_intent_created" => "Budget intent created",
@@ -989,11 +1155,16 @@ namespace IntPay.Api.Services
             return string.Join(" · ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
         }
 
-        private static string BuildActivitySeverity(AuditLog log, RichIntentCardView card)
+        private static string BuildActivitySeverity(AuditLog log, RichIntentCardView? card)
         {
             if (string.Equals(log.Decision, "declined", StringComparison.OrdinalIgnoreCase)) return "danger";
             if (string.Equals(log.Decision, "approved", StringComparison.OrdinalIgnoreCase)) return "success";
-            if (card.IsLockedByPendingInvoice || card.IsManuallyFrozen) return "warning";
+            if (!string.IsNullOrWhiteSpace(log.OutcomeStatus))
+            {
+                if (string.Equals(log.OutcomeStatus, "failed", StringComparison.OrdinalIgnoreCase)) return "danger";
+                if (string.Equals(log.OutcomeStatus, "success", StringComparison.OrdinalIgnoreCase)) return "success";
+            }
+            if (card != null && (card.IsLockedByPendingInvoice || card.IsManuallyFrozen)) return "warning";
             return "neutral";
         }
 

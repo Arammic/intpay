@@ -6,6 +6,7 @@
 --   * MCC allow-lists, city/country context, scheduled unlocks, invoice locks
 --   * manual freeze, expired card, depleted card, open MCC card, self-funded cards
 --   * audit_logs drive remaining_amount / uses_left / lock_money rollups
+--     (rollup uses decision = approved for spend; trigger-written business rows use decision = info)
 --
 -- Run after these migrations:
 --   * decision_status enum has approved, declined, info
@@ -13,6 +14,9 @@
 -- =============================================================================
 
 BEGIN;
+
+-- Suppress business-audit triggers while bulk-loading deterministic demo rows.
+SELECT set_config('intpay.skip_business_audit', 'on', true);
 
 TRUNCATE public.audit_logs, public.virtual_cards, public.intents, public.contacts, public.profiles
 RESTART IDENTITY CASCADE;
@@ -176,6 +180,73 @@ VALUES
 
   (15, 20.00, 'Local Store', '5411', 'declined'::public.decision_status, 'Transaction declined: this card has been frozen by the sender or recipient.', NOW(), 'Sanaa', 15, 'authorization', NOW());
 
+-- 5b. Extended real-world activity: vault movements, extra taps, freeze/unfreeze narrative, expired intent.
+UPDATE public.intents SET status = 'expired' WHERE id = 5;
+
+UPDATE public.virtual_cards SET is_manually_frozen = false WHERE id = 15;
+
+UPDATE public.profiles SET vault_balance = 8750.00 WHERE id = 1;
+UPDATE public.profiles SET vault_balance = 3050.00 WHERE id = 2;
+UPDATE public.profiles SET vault_balance = 4700.00 WHERE id = 3;
+
+INSERT INTO public.audit_logs (
+    card_id, transaction_amount, merchant_name, mcc, decision, reason,
+    created_at, city, entity_id, action, occurred_at,
+    user_id, entity_type, status, before_balance, after_balance, before_status, after_status, note
+)
+VALUES
+  (NULL, 250.00, NULL, NULL, 'info'::public.decision_status, 'Vault balance increased after payroll deposit.',
+   NOW() - INTERVAL '89 days', NULL, 1, 'balance_added', NOW() - INTERVAL '89 days',
+   1, 'profile', 'success', 8500.00, 8750.00, NULL, NULL, 'balance_added +250.00'),
+
+  (NULL, 150.00, NULL, NULL, 'info'::public.decision_status, 'Vault balance decreased after internal transfer.',
+   NOW() - INTERVAL '87 days', NULL, 2, 'balance_deducted', NOW() - INTERVAL '87 days',
+   2, 'profile', 'success', 3200.00, 3050.00, NULL, NULL, 'balance_deducted -150.00'),
+
+  (NULL, 100.00, NULL, NULL, 'info'::public.decision_status, 'Top-up before business trip.',
+   NOW() - INTERVAL '85 days', NULL, 3, 'balance_added', NOW() - INTERVAL '85 days',
+   3, 'profile', 'success', 4600.00, 4700.00, NULL, NULL, 'balance_added +100.00'),
+
+  (6, 75.00, 'Uber', '4121', 'approved'::public.decision_status, NULL,
+   NOW() - INTERVAL '4 days', 'New York', 6, 'authorization', NOW() - INTERVAL '4 days',
+   1, 'virtual_card', 'success', NULL, NULL, NULL, NULL, NULL),
+
+  (6, 220.00, 'Delta Air', '4511', 'declined'::public.decision_status, 'Amount exceeds single-tap policy for this card.',
+   NOW() - INTERVAL '3 days', 'New York', 6, 'authorization', NOW() - INTERVAL '3 days',
+   1, 'virtual_card', 'failed', NULL, NULL, NULL, NULL, NULL),
+
+  (15, 0, NULL, NULL, 'info'::public.decision_status, 'Manual freeze disabled by card owner.',
+   NOW() - INTERVAL '12 hours', 'Sanaa', 15, 'card_manual_freeze_set', NOW() - INTERVAL '12 hours',
+   6, 'virtual_card', 'success', NULL, NULL, NULL, NULL, 'Manual freeze disabled.'),
+
+  (11, 60.00, 'Ticketmaster', '7922', 'declined'::public.decision_status, 'Card locked until scheduled unlock time.',
+   NOW() - INTERVAL '1 day', 'Abu Dhabi', 11, 'authorization', NOW() - INTERVAL '1 day',
+   3, 'virtual_card', 'failed', NULL, NULL, NULL, NULL, NULL),
+
+  (14, 120.00, 'Turkish Airlines', '4511', 'approved'::public.decision_status, NULL,
+   NOW() - INTERVAL '8 days', 'Istanbul', 14, 'authorization', NOW() - INTERVAL '8 days',
+   4, 'virtual_card', 'success', NULL, NULL, NULL, NULL, NULL),
+
+  (9, 35.00, 'Careem', '4121', 'approved'::public.decision_status, NULL,
+   NOW() - INTERVAL '6 hours', 'Dammam', 9, 'authorization', NOW() - INTERVAL '6 hours',
+   7, 'virtual_card', 'success', NULL, NULL, NULL, NULL, NULL),
+
+  (10, 2500.00, 'Meta Ads', '7311', 'declined'::public.decision_status, 'Velocity check: large first spend blocked.',
+   NOW() - INTERVAL '2 days', 'Riyadh', 10, 'authorization', NOW() - INTERVAL '2 days',
+   4, 'virtual_card', 'failed', NULL, NULL, NULL, NULL, NULL),
+
+  (8, 25.00, 'Jarir Bookstore', '5942', 'approved'::public.decision_status, NULL,
+   NOW() - INTERVAL '18 hours', 'Sanaa', 8, 'authorization', NOW() - INTERVAL '18 hours',
+   6, 'virtual_card', 'success', NULL, NULL, NULL, NULL, NULL),
+
+  (12, 50.00, 'AWS', '4816', 'approved'::public.decision_status, NULL,
+   NOW() - INTERVAL '30 minutes', 'Dubai', 12, 'authorization', NOW() - INTERVAL '30 minutes',
+   2, 'virtual_card', 'success', NULL, NULL, NULL, NULL, NULL),
+
+  (3, 25.00, 'Starbucks', '5814', 'declined'::public.decision_status, 'Card locked until scheduled unlock.',
+   NOW() - INTERVAL '7 days', 'Jeddah', 3, 'authorization', NOW() - INTERVAL '7 days',
+   2, 'virtual_card', 'failed', NULL, NULL, NULL, NULL, NULL);
+
 -- 6. Apply approved transactions to intents.
 UPDATE public.intents i
 SET
@@ -219,6 +290,8 @@ SELECT setval(pg_get_serial_sequence('public.profiles', 'id'), (SELECT COALESCE(
 SELECT setval(pg_get_serial_sequence('public.intents', 'id'), (SELECT COALESCE(MAX(id), 1) FROM public.intents));
 SELECT setval(pg_get_serial_sequence('public.virtual_cards', 'id'), (SELECT COALESCE(MAX(id), 1) FROM public.virtual_cards));
 SELECT setval(pg_get_serial_sequence('public.audit_logs', 'id'), (SELECT COALESCE(MAX(id), 1) FROM public.audit_logs));
+
+SELECT set_config('intpay.skip_business_audit', 'off', true);
 
 COMMIT;
 

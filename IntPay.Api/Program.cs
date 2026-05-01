@@ -40,8 +40,24 @@ var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
+    // Serve the curated OpenAPI YAML (examples, long descriptions). Scalar defaults to generated JSON, which omits those.
+    app.MapGet("/openapi/intpay-v1.yaml", (IWebHostEnvironment env) =>
+    {
+        var path = Path.Combine(env.ContentRootPath, "docs", "openapi-v1.yaml");
+        return File.Exists(path)
+            ? Results.File(path, contentType: "application/vnd.oai.openapi; charset=utf-8")
+            : Results.NotFound($"Missing OpenAPI file: {path}");
+    }).AllowAnonymous();
+
     app.MapOpenApi();
-    app.MapScalarApiReference();
+
+    app.MapScalarApiReference(options =>
+    {
+        options
+            .WithTitle("IntPay API")
+            // Load the hand-maintained spec (examples, descriptions). Generated /openapi/v1.json stays available separately.
+            .WithOpenApiRoutePattern("/openapi/intpay-v1.yaml");
+    });
 }
 
 app.Use(async (context, next) =>

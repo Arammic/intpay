@@ -14,7 +14,13 @@ public static class ProfileEndpoints
                 try
                 {
                     var result = await profileService.GetProfileFullResponse(id);
-                    return Results.Json(new { success = true, message = "Profile fetched successfully.", data = result }, statusCode: 200);
+                    return Results.Json(new
+                    {
+                        success = true,
+                        message = "Profile fetched successfully.",
+                        data = result,
+                        meta = EndpointResults.V1Meta()
+                    }, statusCode: 200);
                 }
                 catch (KeyNotFoundException knf)
                 {

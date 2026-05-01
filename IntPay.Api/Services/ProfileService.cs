@@ -113,18 +113,7 @@ public class ProfileService
         var response = await _client.From<Profile>().Update(profile);
         var model = response.Model ?? throw new InvalidOperationException("Failed to update profile vault balance.");
 
-        var now = DateTime.UtcNow;
-        await _audit.InsertAsync(new AuditLog
-        {
-            CardId = null,
-            EntityId = profileId,
-            Action = "wallet_credit",
-            Decision = "info",
-            Reason = $"Vault credited by {amount:0.00}",
-            TransactionAmount = 0,
-            CreatedAt = now,
-            OccurredAt = now
-        });
+        // Vault audit row is written by DB trigger trg_profiles_vault_business_audit (balance_added / balance_deducted).
 
         return model;
     }

@@ -4,6 +4,14 @@ Base path: `/api/v1`
 
 هذا التوثيق مطابق لبنية المشروع الحالية في `Endpoints/V1` وملفات الـ DTOs داخل `supabase`. جميع الأمثلة تستخدم أسماء الحقول بصيغة JSON الافتراضية في ASP.NET Core، أي `camelCase`.
 
+في بيئة **Development** يعمل التالي:
+
+- **`MapOpenApi()`** يولّد JSON تلقائيًا (مثلًا تحت مسار `/openapi/v1.json`) ولا يحتوي عادةً على الأمثلة `examples` الطويلة من الملف اليدوي.
+- **`docs/openapi-v1.yaml`** يُعرَض كما هو من المسار **`/openapi/intpay-v1.yaml`**، و**Scalar** مضبوط عبر `WithOpenApiRoutePattern` ليقرأ هذا المسار، فيظهر الوصف الكامل والأمثلة كما في YAML.
+- للتحقق: افتح `https://localhost:<port>/openapi/intpay-v1.yaml` (أو العنوان الذي تستخدمه) وتأكد أن الملف يُحمَّل، ثم افتح **`/scalar`**.
+
+يُفضّل إبقاء `docs/openapi-v1.yaml` متوافقًا مع `Endpoints/V1` عند تغيير المسارات.
+
 ## قواعد عامة
 
 ### نموذج الأمان الحالي
@@ -31,7 +39,7 @@ Base path: `/api/v1`
 }
 ```
 
-بعض المسارات القديمة ترجع شكلًا قريبًا بدون `success` أو بدون `meta`، وهذا موضح عند كل endpoint.
+**استثناء واحد مهم:** `POST /intents/create` يرجع **`data`، `message`، `status`** فقط (HTTP 201) **بدون** `success` و**بدون** `meta` — باقي مسارات v1 في `Endpoints/V1` للنجاح ترجع `success` و`meta` بنفس شكل `Meta` (بما في ذلك `GET /profiles/{id}` ومسارات البطاقات بعد توحيد المغلف).
 
 ### شكل الأخطاء
 
@@ -89,16 +97,16 @@ Base path: `/api/v1`
 
 ### `activity role`
 
-مستخدم في `GET /users/{userId}/activities/latest`.
+**فلتر الاستعلام** `role` على `GET /users/{userId}/activities/latest` (يُطبَّع داخل الخادم قبل التصفية):
 
-- `all`: كل الأنشطة المرئية للمستخدم.
-- `sender`: الأنشطة التي يكون فيها المستخدم هو `creator_id`.
-- `creator`: مرادف لـ `sender`.
-- `sent`: مرادف لـ `sender`.
-- `receiver`: الأنشطة التي يكون فيها المستخدم هو `receiver_id`.
-- `recipient`: مرادف لـ `receiver`.
-- `received`: مرادف لـ `receiver`.
-- `self`: الأنشطة التي يكون فيها المستخدم هو المرسل والمستلم معًا.
+- `all` (الافتراضي عند قيمة غير معروفة أو فارغة): كل البطاقات التي يظهر فيها المستخدم كـ `creator_id` أو `receiver_id`.
+- `sender`: المرسل فقط (`creator_id` = المستخدم و`receiver_id` ≠ المستخدم).
+- `creator` أو `sent`: يُعاملان مثل **`sender`**.
+- `receiver`: المستلم فقط (`receiver_id` = المستخدم و`creator_id` ≠ المستخدم).
+- `recipient` أو `received`: يُعاملان مثل **`receiver`**.
+- `self`: المرسل والمستلم نفس المستخدم على البطاقة.
+
+**داخل عنصر** `UserActivityItem.role` (حقل الاستجابة) قد تظهر أيضًا **`participant`** عندما لا ينطبق أحد الأنماط أعلاه (حالة شاذة نادرة للبطاقة المرتبطة بالسجل).
 
 ### `activity severity`
 
@@ -109,13 +117,32 @@ Base path: `/api/v1`
 - `warning`: أحداث معلوماتية مرتبطة بقفل/تجميد/فاتورة.
 - `neutral`: الحالة الافتراضية.
 
-### `relationship type`
+### `activity entity type`
 
-مستخدم في `CardDetailsResponse.type`.
+مستخدم في `GET /users/{userId}/activities/latest` كفلتر استعلام `entityType` وفي كل عنصر `UserActivityItem.entityType` (قيمة مشتقة داخل الـ API).
+
+- `profile`: أحداث محفظة مرتبطة بـ `audit_logs.user_id` بدون بطاقة (مثل `balance_added`، `balance_deducted`، `wallet_credit` عندما تظهر على التغذية).
+- `intent`: أحداث حوكمة مرتبطة بالـ intent على تغذية الملف الشخصي.
+- `virtual_card`: أحداث مرتبطة ببطاقة وليست محاولة دفع (`action` غير `authorization`).
+- `transaction`: محاولات دفع (`action = authorization`).
+
+### `activity outcome`
+
+مستخدم كفلتر استعلام باسم **`status`** (لتفادي التعارض مع حالة البطاقة)، ويعاد في الاستجابة ضمن `filters.outcome` و`UserActivityItem.outcome` بعد تطبيع القيم.
+
+- `success`: نجاح العملية (مثل `decision = approved` لعمليات الدفع، أو رصيد ناجح عندما يُمثّل كذلك).
+- `failed`: فشل أو رفض (مثل `decision = declined` أو `status = failed` في السجل).
+- `info`: أحداث معلوماتية (`decision = info` أو ما يعادلها).
+
+### `relationship type` (منظور البطاقة)
+
+مستخدم في `CardDetailsResponse.type` ضمن `IntentWithCardResponse` (قيم JSON فعلية من الخادم).
 
 - `self`: المستخدم الحالي هو المرسل والمستلم.
-- `sent`: المستخدم الحالي أرسل intent لمستخدم آخر.
-- `receiver`: المستخدم الحالي هو مستلم intent من مستخدم آخر.
+- `sent`: المستخدم الحالي هو المرسل والمستلم مختلف.
+- `receiver`: المستخدم الحالي هو المستلم والمرسل مختلف.
+
+لا تُستخدم القيمة `participant` على كائن البطاقة الغني؛ تظهر فقط في `UserActivityItem.role` عند الحاجة كما في قسم `activity role`.
 
 ### `card status` و`intent status`
 
@@ -277,6 +304,8 @@ Base path: `/api/v1`
 
 - `decision` (`string | null`)
 - `action` (`string | null`)
+- `entityType` (`string | null`): أحد قيم `activity entity type` عند تمرير فلتر `entityType`.
+- `outcome` (`string | null`): يعكس فلتر الاستعلام `status` (تطبيع النتيجة).
 - `cardId` (`integer | null`)
 - `intentId` (`integer | null`)
 - `fromUtc` (`string | null`, date-time)
@@ -328,10 +357,12 @@ Base path: `/api/v1`
 - `isSpendBlocked` (`boolean`)
 - `senderName` (`string | null`)
 - `activityType` (`string`)
-- `title` (`string`)
+- `title` (`string`): عنوان قصير مُشتق من السجل؛ للدفع مع `merchantName` يكون غالبًا `Approved at {merchantName}` أو `Declined at {merchantName}`؛ لأحداث أخرى انظر منطق العناوين في `IntPayService.BuildActivityTitle`.
 - `subtitle` (`string`)
 - `severity` (`string`)
 - `amountLabel` (`string`)
+- `entityType` (`string | null`): تصنيف مشتق؛ راجع `activity entity type`.
+- `outcome` (`string | null`): نتيجة مشتقة؛ راجع `activity outcome`.
 
 ## Profiles
 
@@ -398,6 +429,11 @@ Response example:
       }
     ],
     "points": 11
+  },
+  "meta": {
+    "statusCode": 200,
+    "version": "v1",
+    "timestamp": "2026-05-01T02:00:00.0000000+00:00"
   }
 }
 ```
@@ -871,6 +907,11 @@ Response example:
       }
     },
     "logs": []
+  },
+  "meta": {
+    "statusCode": 200,
+    "version": "v1",
+    "timestamp": "2026-05-01T02:00:00.0000000+00:00"
   }
 }
 ```
@@ -943,6 +984,7 @@ Response example:
   },
   "meta": {
     "statusCode": 200,
+    "version": "v1",
     "timestamp": "2026-05-01T02:00:00.0000000+00:00"
   }
 }
@@ -1056,6 +1098,11 @@ Response example:
       "useTimes": 99999,
       "usesLeft": 99999
     }
+  },
+  "meta": {
+    "statusCode": 200,
+    "version": "v1",
+    "timestamp": "2026-05-01T02:00:00.0000000+00:00"
   }
 }
 ```
@@ -1116,6 +1163,11 @@ Response example:
         }
       }
     ]
+  },
+  "meta": {
+    "statusCode": 200,
+    "version": "v1",
+    "timestamp": "2026-05-01T02:00:00.0000000+00:00"
   }
 }
 ```
@@ -1170,7 +1222,7 @@ Response example:
 
 Endpoint: `GET /users/{userId}/activities/latest`
 
-الوصف: يرجع rich activity feed مبنيًا على `audit_logs` لكل البطاقات المرئية للمستخدم، مع فلاتر كثيرة للواجهة.
+الوصف: يرجع تغذية نشاط مدمجة: سجلات `audit_logs` المرتبطة بالبطاقات الظاهرة للمستخدم (كمرسل أو مستلم)، مدمجة مع سجلات الملف الشخصي حيث `audit_logs.user_id` يساوي `userId` في المسار (تغييرات الرصيد في الخزنة وأحداث الحوكمة المعروضة على تغذية الملف الشخصي). تُحسب لكل عنصر حقول مشتقة `entityType` و`outcome` للواجهة والفلترة.
 
 Path parameters:
 
@@ -1180,13 +1232,15 @@ Query parameters:
 
 - `limit` (`integer`, optional, default `50`, clamped من 1 إلى 1000)
 - `offset` (`integer`, optional, default `0`, أقل قيمة 0)
-- `decision` (`string`, optional): `approved`, `declined`, `info`.
-- `action` (`string`, optional): مثل `authorization`, `intent_updated`, `invoice_verification`.
+- `decision` (`string`, optional): قرار السجل الخام `approved`, `declined`, `info`.
+- `action` (`string`, optional): مثل `authorization`, `balance_added`, `balance_deducted`, `wallet_credit`, `intent_updated`, `invoice_verification`, `card_manual_freeze_set`.
+- `entityType` (`string`, optional): فلتر على التصنيف المشتق؛ راجع `activity entity type`.
+- `status` (`string`, optional): فلتر على النتيجة المطبّعة؛ القيم `success`, `failed`, `info`؛ يُعاد في `data.filters.outcome` (اسم الحقل في JSON `outcome` وليس `status`).
 - `cardId` (`integer`, optional)
 - `intentId` (`integer`, optional)
 - `from` (`string`, optional, date-time): يحول إلى UTC.
 - `to` (`string`, optional, date-time): يحول إلى UTC.
-- `merchant` (`string`, optional): contains filter case-insensitive داخل الذاكرة.
+- `merchant` (`string`, optional): تطابق جزئي case-insensitive على اسم التاجر؛ لصفوف الملف الشخصي يُطابق `note` أو `reason`.
 - `mcc` (`string`, optional): match exact.
 - `city` (`string`, optional): contains filter case-insensitive داخل الذاكرة.
 - `minAmount` (`number`, optional)
@@ -1227,6 +1281,8 @@ Response example:
     "filters": {
       "decision": "approved",
       "action": null,
+      "entityType": null,
+      "outcome": null,
       "cardId": null,
       "intentId": null,
       "fromUtc": null,
@@ -1277,10 +1333,12 @@ Response example:
         "isSpendBlocked": false,
         "senderName": null,
         "activityType": "authorization",
-        "title": "Payment approved",
-        "subtitle": "Riyadh Taxi · 4121",
+        "title": "Approved at Riyadh Taxi",
+        "subtitle": "Team travel allowance · Riyadh · MCC 4121",
         "severity": "success",
-        "amountLabel": "$25.50"
+        "amountLabel": "$25.50",
+        "entityType": "transaction",
+        "outcome": "success"
       }
     ]
   },
@@ -1428,7 +1486,10 @@ Body type: `VerifyInvoiceRequest`
 - `imageUrl` (`string`, required): رابط صورة الفاتورة.
 - `actingUserId` (`integer`, required): المستخدم الطالب، يجب أن يكون creator أو receiver.
 
-Response type: `ApiEnvelope<object>`
+Response type: `ApiEnvelope` حيث `data` كائن يعكس تنفيذ الخادم الحالي (ليس `intentId`/`cardId`/`approved`):
+
+- إذا كان `requiredInvoiceProve` على الـ intent = false: يُرجع `{ skippedVerification, isMatch, reason, isLockedByPendingInvoice, isManuallyFrozen, isSpendBlocked, cardLocked }`.
+- وإلا بعد استدعاء نموذج التحقق: `{ isMatch, reason, isLockedByPendingInvoice, isManuallyFrozen, isSpendBlocked, cardLocked, provider, invoiceCity, invoiceCountry, hasGps, gpsLatitude, gpsLongitude, metadataCity, metadataCountry }` (بعض الحقول قد تكون `null` حسب المزود).
 
 Validation:
 
@@ -1460,10 +1521,20 @@ Response example:
   "success": true,
   "message": "Invoice verification completed successfully.",
   "data": {
-    "intentId": 21,
-    "cardId": 31,
-    "approved": true,
-    "reason": "Invoice accepted."
+    "isMatch": true,
+    "reason": "Invoice accepted.",
+    "isLockedByPendingInvoice": false,
+    "isManuallyFrozen": false,
+    "isSpendBlocked": false,
+    "cardLocked": false,
+    "provider": "gemini",
+    "invoiceCity": "Riyadh",
+    "invoiceCountry": "SA",
+    "hasGps": false,
+    "gpsLatitude": null,
+    "gpsLongitude": null,
+    "metadataCity": null,
+    "metadataCountry": null
   },
   "meta": {
     "statusCode": 200,

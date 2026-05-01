@@ -1,3 +1,4 @@
+using IntPay.Api.Endpoints;
 using IntPay.Api.Services;
 using IntPay.Api.supabase;
 using Microsoft.AspNetCore.Mvc;
@@ -33,7 +34,7 @@ public static class CardEndpoints
                         success = true,
                         message = "Audit logs fetched successfully.",
                         data = result,
-                        meta = new { statusCode = 200, timestamp = DateTimeOffset.UtcNow.ToString("O") }
+                        meta = EndpointResults.V1Meta()
                     }, statusCode: 200);
                 }
                 catch (KeyNotFoundException knf)
@@ -96,7 +97,13 @@ public static class CardEndpoints
                         return Results.Json(new { success = false, message = "Query parameter profileId is required." }, statusCode: 400);
 
                     var result = await service.GetCardWithLogsByCardId(cardId, pid);
-                    return Results.Json(new { success = true, message = "Card fetched successfully.", data = result }, statusCode: 200);
+                    return Results.Json(new
+                    {
+                        success = true,
+                        message = "Card fetched successfully.",
+                        data = result,
+                        meta = EndpointResults.V1Meta()
+                    }, statusCode: 200);
                 }
                 catch (KeyNotFoundException knf)
                 {
@@ -120,7 +127,13 @@ public static class CardEndpoints
                     var card = await service.GetLatestCardForUser(userId);
                     if (card == null)
                         return Results.Json(new { success = false, message = "No cards were found for this user." }, statusCode: 404);
-                    return Results.Json(new { success = true, message = "Latest card fetched successfully.", data = card });
+                    return Results.Json(new
+                    {
+                        success = true,
+                        message = "Latest card fetched successfully.",
+                        data = card,
+                        meta = EndpointResults.V1Meta()
+                    });
                 }
                 catch (Exception ex)
                 {
@@ -136,7 +149,13 @@ public static class CardEndpoints
                     var l = string.IsNullOrWhiteSpace(limit) || !int.TryParse(limit.Trim(), out var lim) ? 50 : lim;
                     var o = string.IsNullOrWhiteSpace(offset) || !int.TryParse(offset.Trim(), out var off) ? 0 : off;
                     var result = await service.GetCardsForUser(userId, l, o);
-                    return Results.Json(new { success = true, message = "Cards fetched successfully.", data = result });
+                    return Results.Json(new
+                    {
+                        success = true,
+                        message = "Cards fetched successfully.",
+                        data = result,
+                        meta = EndpointResults.V1Meta()
+                    });
                 }
                 catch (Exception ex)
                 {

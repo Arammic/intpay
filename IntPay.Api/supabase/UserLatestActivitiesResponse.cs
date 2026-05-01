@@ -6,6 +6,10 @@ public sealed class UserLatestActivitiesQuery
     public int Offset { get; init; }
     public string? Decision { get; init; }
     public string? Action { get; init; }
+    /// <summary>Maps to audit row business classification: profile | intent | virtual_card | transaction.</summary>
+    public string? EntityType { get; init; }
+    /// <summary>Normalized outcome: success | failed | info (from <c>audit_logs.status</c> or derived from <c>decision</c>).</summary>
+    public string? Outcome { get; init; }
     public int? CardId { get; init; }
     public int? IntentId { get; init; }
     public DateTime? FromUtc { get; init; }
@@ -34,6 +38,8 @@ public sealed class UserLatestActivitiesAppliedFilters
 {
     public string? Decision { get; init; }
     public string? Action { get; init; }
+    public string? EntityType { get; init; }
+    public string? Outcome { get; init; }
     public int? CardId { get; init; }
     public int? IntentId { get; init; }
     public DateTime? FromUtc { get; init; }
@@ -93,4 +99,10 @@ public sealed class UserActivityItem
     public string Subtitle { get; init; } = string.Empty;
     public string Severity { get; init; } = "neutral";
     public string AmountLabel { get; init; } = "$0.00";
+
+    /// <summary>profile | intent | virtual_card | transaction (for filtering and UI grouping).</summary>
+    public string? EntityType { get; init; }
+
+    /// <summary>success | failed | info.</summary>
+    public string? Outcome { get; init; }
 }

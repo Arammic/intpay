@@ -28,6 +28,27 @@ public static class UserEndpoints
             })
             .WithName("GetDashboardMetrics");
 
+        /// <summary>
+        /// Retrieves merged activity for a user: card-scoped audit rows (payments, governance) plus profile-scoped rows (vault balance changes) when <c>audit_logs.user_id</c> matches.
+        /// </summary>
+        /// <param name="userId">Path user id; only cards where this user is creator or receiver are included for card logs.</param>
+        /// <param name="limit">Page size (default 50, max 1000).</param>
+        /// <param name="offset">Skip count for pagination.</param>
+        /// <param name="decision">Filter by raw audit <c>decision</c> enum value: approved, declined, info.</param>
+        /// <param name="action">Filter by audit <c>action</c> (e.g. authorization, balance_added, card_manual_freeze_set).</param>
+        /// <param name="entityType">Filter by derived bucket: profile, intent, virtual_card, transaction.</param>
+        /// <param name="status">Filter by normalized outcome: success, failed, info (maps from <c>audit_logs.status</c> or <c>decision</c>).</param>
+        /// <param name="cardId">Restrict to a single virtual card id.</param>
+        /// <param name="intentId">Restrict to logs for a given intent (card-backed or intent-typed profile rows).</param>
+        /// <param name="from">Inclusive UTC lower bound on <c>created_at</c>.</param>
+        /// <param name="to">Inclusive UTC upper bound on <c>created_at</c>.</param>
+        /// <param name="merchant">Case-insensitive contains on merchant name, note, or reason (profile rows use note/reason).</param>
+        /// <param name="mcc">Exact MCC match.</param>
+        /// <param name="city">Case-insensitive contains on city.</param>
+        /// <param name="minAmount">Minimum <c>transaction_amount</c>.</param>
+        /// <param name="maxAmount">Maximum <c>transaction_amount</c>.</param>
+        /// <param name="role">sender, receiver, self, or all (controls which cards appear).</param>
+        /// <param name="includeInfo">When false, excludes rows with <c>decision = info</c>.</param>
         api.MapGet("/users/{userId:int}/activities/latest", async (
                 int userId,
                 IntPayService service,
@@ -35,6 +56,8 @@ public static class UserEndpoints
                 [FromQuery] int? offset = 0,
                 [FromQuery] string? decision = null,
                 [FromQuery] string? action = null,
+                [FromQuery] string? entityType = null,
+                [FromQuery] string? status = null,
                 [FromQuery] int? cardId = null,
                 [FromQuery] int? intentId = null,
                 [FromQuery] DateTime? from = null,
@@ -55,6 +78,8 @@ public static class UserEndpoints
                         Offset = offset ?? 0,
                         Decision = string.IsNullOrWhiteSpace(decision) ? null : decision.Trim(),
                         Action = string.IsNullOrWhiteSpace(action) ? null : action.Trim(),
+                        EntityType = string.IsNullOrWhiteSpace(entityType) ? null : entityType.Trim(),
+                        Outcome = string.IsNullOrWhiteSpace(status) ? null : status.Trim(),
                         CardId = cardId,
                         IntentId = intentId,
                         FromUtc = from?.ToUniversalTime(),
