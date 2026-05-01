@@ -11,6 +11,7 @@ public class RichIntentCardView : BaseModel
     [Column("receiver_id")] public int ReceiverId { get; set; }
     [Column("amount")] public decimal Amount { get; set; }
     [Column("remaining_amount")] public decimal RemainingAmount { get; set; }
+    /// <summary><c>virtual_cards.status</c> (active | inactive), not intent status.</summary>
     [Column("status")] public string Status { get; set; } = string.Empty;
     [Column("mcc_codes")] public List<string> MccCodes { get; set; } = new();
     [Column("first_date_to_user")] public DateTime? FirstDateToUser { get; set; }

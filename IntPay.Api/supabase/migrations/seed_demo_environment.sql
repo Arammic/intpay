@@ -119,7 +119,7 @@ INSERT INTO public.virtual_cards (
 VALUES
   (1, 'ic_mw_1', 1, '4111222233334444', '4444', 'Mhammed Fares', 12, 2027, 'active', NOW()-INTERVAL '20 days', '123', false, false),
   (2, 'ic_mw_2', 2, '4111555566667777', '7777', 'Reda Essa', 11, 2027, 'active', NOW()-INTERVAL '12 days', '456', false, false),
-  (3, 'ic_mw_3', 3, '4111888899990000', '0000', 'Mery Kassis', 10, 2028, 'LOCKED', NOW()-INTERVAL '8 days', '789', false, false),
+  (3, 'ic_mw_3', 3, '4111888899990000', '0000', 'Mery Kassis', 10, 2028, 'active', NOW()-INTERVAL '8 days', '789', false, false),
   (4, 'ic_mw_4', 4, '4111111122223333', '3333', 'Reda Essa', 9, 2026, 'active', NOW()-INTERVAL '9 days', '321', false, false),
   (5, 'ic_mw_5', 5, '4111444455556666', '6666', 'Abdalla Ahmed', 8, 2025, 'inactive', NOW()-INTERVAL '40 days', '654', true, false),
   (6, 'ic_mw_6', 6, '4111777788889999', '9999', 'Mhammed Fares', 7, 2029, 'active', NOW()-INTERVAL '5 days', '987', false, false),
@@ -127,7 +127,7 @@ VALUES
   (8, 'ic_mw_8', 8, '4111333344445555', '5555', 'Laila Hassan', 5, 2027, 'active', NOW()-INTERVAL '4 days', '258', false, false),
   (9, 'ic_mw_9', 9, '4111666677778888', '8888', 'Yaser Amer', 4, 2026, 'active', NOW()-INTERVAL '1 day', '357', false, false),
   (10, 'ic_mw_10', 10, '4111999900001111', '1111', 'Abdalla Ahmed', 3, 2030, 'active', NOW()-INTERVAL '3 days', '456', false, false),
-  (11, 'ic_mw_11', 11, '4111222244446666', '6666', 'Reda Essa', 2, 2028, 'LOCKED', NOW()-INTERVAL '2 days', '123', false, false),
+  (11, 'ic_mw_11', 11, '4111222244446666', '6666', 'Reda Essa', 2, 2028, 'active', NOW()-INTERVAL '2 days', '123', false, false),
   (12, 'ic_mw_12', 12, '4111888800002222', '2222', 'Mery Kassis', 1, 2026, 'active', NOW()-INTERVAL '6 days', '741', false, false),
   (13, 'ic_mw_13', 13, '4111555511113333', '3333', 'Abdalla Ahmed', 12, 2025, 'active', NOW()-INTERVAL '2 days', '852', false, false),
   (14, 'ic_mw_14', 14, '4111000077774444', '4444', 'Abdalla Ahmed', 11, 2027, 'active', NOW()-INTERVAL '11 days', '963', false, false),
@@ -273,7 +273,7 @@ SET lock_money = COALESCE((
     WHERE i.creator_id = i.receiver_id
       AND i.creator_id = p.id
       AND i.status = 'active'
-      AND vc.status IN ('active', 'LOCKED')
+      AND vc.status = 'active'
 ), 0);
 
 -- 8. Opening treasury audit after nullable card_id migration.
