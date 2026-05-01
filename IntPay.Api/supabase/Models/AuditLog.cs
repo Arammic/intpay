@@ -8,8 +8,9 @@ public class AuditLog : BaseModel
     [PrimaryKey("id", false)]
     public int Id { get; set; }
 
+    /// <summary>Null when the event is not tied to a card (e.g. wallet_credit, unknown PAN).</summary>
     [Column("card_id")]
-    public int CardId { get; set; }
+    public int? CardId { get; set; }
 
     [Column("transaction_amount")]
     public decimal TransactionAmount { get; set; }
@@ -38,10 +39,6 @@ public class AuditLog : BaseModel
 
     [Column("action")]
     public string? Action { get; set; }
-
-    /// <summary>JSON payload (stored as jsonb).</summary>
-    [Column("response_data")]
-    public string? ResponseData { get; set; }
 
     /// <summary>When the audited event occurred (mirrors API "Timestamp").</summary>
     [Column("occurred_at")]

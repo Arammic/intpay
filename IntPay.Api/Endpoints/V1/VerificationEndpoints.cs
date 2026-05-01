@@ -11,14 +11,16 @@ public static class VerificationEndpoints
             {
                 try
                 {
-                    payload = payload ?? throw new ArgumentException("Payload is required");
+                    payload = payload ?? throw new ArgumentException("Request body is required.");
+                    if (payload.ActingUserId <= 0)
+                        return Results.Json(new { success = false, message = "Request field actingUserId is required." }, statusCode: 400);
 
                     var result = await service.VerifyInvoiceAsync(payload, ct);
 
                     return Results.Json(new
                     {
                         success = true,
-                        message = "Invoice verification completed",
+                        message = "Invoice verification completed successfully.",
                         data = result,
                         meta = new { statusCode = 200, version = "v1", timestamp = DateTimeOffset.UtcNow.ToString("O") }
                     }, statusCode: 200);
@@ -30,6 +32,10 @@ public static class VerificationEndpoints
                 catch (ArgumentException ax)
                 {
                     return Results.Json(new { success = false, message = ax.Message }, statusCode: 400);
+                }
+                catch (UnauthorizedAccessException ua)
+                {
+                    return Results.Json(new { success = false, message = ua.Message }, statusCode: 403);
                 }
                 catch (InvalidOperationException iox)
                 {

@@ -27,6 +27,7 @@ builder.Services.AddSingleton<IReverseGeocoder, PlaceholderReverseGeocoder>();
 builder.Services.AddHttpClient<InvoiceVerificationService>();
 builder.Services.AddScoped<ActiveIntentCommitmentQuery>();
 builder.Services.AddScoped<IAuditLogWriter, SupabaseAuditLogWriter>();
+builder.Services.AddScoped<ResourceAccessService>();
 builder.Services.AddScoped<ProfileService>();
 builder.Services.AddScoped<IntPayService>();
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -42,6 +43,25 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
     app.MapScalarApiReference();
 }
+
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (BadHttpRequestException ex)
+    {
+        Console.WriteLine($"[HTTP_BINDING] {context.Request.Method} {context.Request.Path}{context.Request.QueryString} -> {ex.Message}");
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsJsonAsync(new
+        {
+            success = false,
+            message = "Invalid query parameter value.",
+            detail = ex.Message
+        });
+    }
+});
 
 app.UseHttpsRedirection();
 app.UseCors("AllowedOrigins");

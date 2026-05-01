@@ -14,7 +14,7 @@ public static class ProfileEndpoints
                 try
                 {
                     var result = await profileService.GetProfileFullResponse(id);
-                    return Results.Json(new { success = true, data = result }, statusCode: 200);
+                    return Results.Json(new { success = true, message = "Profile fetched successfully.", data = result }, statusCode: 200);
                 }
                 catch (KeyNotFoundException knf)
                 {
@@ -37,7 +37,7 @@ public static class ProfileEndpoints
                     return Results.Json(new
                     {
                         success = true,
-                        message = "Funds added successfully",
+                        message = "Funds added successfully.",
                         data = new
                         {
                             id = updated.Id,
@@ -70,14 +70,14 @@ public static class ProfileEndpoints
                 try
                 {
                     if (string.IsNullOrWhiteSpace(name))
-                        return Results.Json(new { success = false, message = "Name query is required" }, statusCode: 400);
+                        return Results.Json(new { success = false, message = "Query parameter name is required." }, statusCode: 400);
 
                     var results = await profileService.SearchProfilesByName(name);
 
                     return Results.Json(new
                     {
                         success = true,
-                        message = $"Found {results.Count} profiles matching '{name}'",
+                        message = $"Found {results.Count} profile(s) matching '{name}'.",
                         data = results,
                         meta = EndpointResults.V1MetaShort()
                     }, statusCode: 200);

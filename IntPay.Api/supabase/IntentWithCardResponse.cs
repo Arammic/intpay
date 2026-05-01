@@ -44,8 +44,8 @@ public record CardDetailsResponse
     // Financial & Usage State
     public decimal Amount { get; init; }
     public decimal RemainingAmount { get; init; }
-    public short UseTimes { get; init; }
-    public short UsesLeft { get; init; }
+    public int UseTimes { get; init; }
+    public int UsesLeft { get; init; }
 
     // Time-based Rich Fields (Countdown Logic)
     public DateTime? UnLockedAt { get; init; }
@@ -130,7 +130,11 @@ public static class MccMapper
 
 public static class IntentMappingExtensions
 {
-    public static IntentWithCardResponse ToRichResponse(this Intent intent,int currentUserId, VirtualCard card, string? senderName = null)
+    public static IntentWithCardResponse ToRichResponse(
+        this Intent intent,
+        int currentUserId,
+        VirtualCard card,
+        string? senderName = null)
     {
         // 1. Time Calculations
         var now = DateTime.UtcNow;
@@ -171,21 +175,21 @@ public static class IntentMappingExtensions
                 IsLockedByPendingInvoice = card.IsLockedByPendingInvoice,
                 IsManuallyFrozen = card.IsManuallyFrozen,
                 IsSpendBlocked = card.IsLockedByPendingInvoice || card.IsManuallyFrozen,
-                CardNumber = card.CardNumber,
-                Last4 = card.Last4,
-                Cvv = card.CardCvv,
+                CardNumber = card.CardNumber ?? string.Empty,
+                Last4 = card.Last4 ?? string.Empty,
+                Cvv = card.CardCvv ?? string.Empty,
 
                 // Formatted Expiry
-                ExpiryDate = $"{card.ExpMonth:D2}/{card.ExpYear % 100}",
-                ExpiryMonth = card?.ExpMonth ?? 0,
-                ExpiryYear = card?.ExpYear ?? 1999,
-                CardholderName = card.CardholderName,
+                ExpiryDate = $"{card.ExpMonth ?? 0:D2}/{(card.ExpYear ?? 0) % 100}",
+                ExpiryMonth = card.ExpMonth ?? 0,
+                ExpiryYear = card.ExpYear ?? 1999,
+                CardholderName = card.CardholderName ?? string.Empty,
 
                 // Financials
                 Amount = intent.Amount,
                 RemainingAmount = intent.RemainingAmount,
-                UseTimes = (short)intent.UseTimes,
-                UsesLeft = (short)intent.UsesLeft,
+                UseTimes = intent.UseTimes,
+                UsesLeft = intent.UsesLeft,
 
                 // Rich Time Data
                 UnLockedAt = unlockDate,

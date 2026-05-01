@@ -17,7 +17,7 @@ public static class IntentEndpoints
                     return Results.Json(new
                     {
                         data = result,
-                        message = "Intent and Virtual Card created successfully",
+                        message = "Intent and virtual card created successfully.",
                         status = 201
                     }, statusCode: 201);
                 }
@@ -39,7 +39,7 @@ public static class IntentEndpoints
                     return Results.Json(new
                     {
                         success = true,
-                        message = "Intent fetched",
+                        message = "Intent fetched successfully.",
                         data,
                         meta = new { statusCode = 200, version = "v1", timestamp = DateTimeOffset.UtcNow.ToString("O") }
                     }, statusCode: 200);
@@ -71,7 +71,7 @@ public static class IntentEndpoints
                     return Results.Json(new
                     {
                         success = true,
-                        message = "Intent updated",
+                        message = "Intent updated successfully.",
                         data,
                         meta = new { statusCode = 200, version = "v1", timestamp = DateTimeOffset.UtcNow.ToString("O") }
                     }, statusCode: 200);

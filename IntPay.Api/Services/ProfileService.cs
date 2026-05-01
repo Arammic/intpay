@@ -10,12 +10,18 @@ public class ProfileService
     private readonly Supabase.Client _client;
     private readonly IAuditLogWriter _audit;
     private readonly ActiveIntentCommitmentQuery _commitmentQuery;
+    private readonly ResourceAccessService _access;
 
-    public ProfileService(Supabase.Client client, IAuditLogWriter audit, ActiveIntentCommitmentQuery commitmentQuery)
+    public ProfileService(
+        Supabase.Client client,
+        IAuditLogWriter audit,
+        ActiveIntentCommitmentQuery commitmentQuery,
+        ResourceAccessService access)
     {
         _client = client;
         _audit = audit;
         _commitmentQuery = commitmentQuery;
+        _access = access;
     }
 
     /// <summary>Sum of <c>remaining_amount</c> for active intents created by <paramref name="userId"/> (single source of truth with <see cref="IntPayService"/> sync).</summary>
@@ -110,12 +116,11 @@ public class ProfileService
         var now = DateTime.UtcNow;
         await _audit.InsertAsync(new AuditLog
         {
-            CardId = 0,
+            CardId = null,
             EntityId = profileId,
             Action = "wallet_credit",
             Decision = "info",
             Reason = $"Vault credited by {amount:0.00}",
-            ResponseData = System.Text.Json.JsonSerializer.Serialize(new { profileId, amount, vaultBalance = model.VaultBalance }),
             TransactionAmount = 0,
             CreatedAt = now,
             OccurredAt = now
@@ -184,12 +189,16 @@ public class ProfileService
 
     public async Task<PagedAuditLogsResponse> GetAuditLogsByCardId(
         int cardId,
+        int actingUserId,
         int limit = 50,
         int offset = 0,
         string? decision = null,
         DateTime? fromUtc = null,
         DateTime? toUtc = null)
     {
+        // Sender/recipient privacy boundary: audit logs reveal transaction behavior and must be scoped to participants.
+        await _access.EnsureCanAccessCardAsync(cardId, actingUserId);
+
         limit = Math.Clamp(limit, 1, 1000);
         offset = Math.Max(0, offset);
 
@@ -372,8 +381,8 @@ public async Task<List<object>> SearchProfilesByName(string name)
                 ExpiryMonth = view.ExpMonth,
                 ExpiryYear = view.ExpYear,
                 CardholderName = view.CardholderName,
-                UsesLeft = (short)view.UsesLeft,
-                UseTimes = (short)view.UseTimes,
+                UsesLeft = view.UsesLeft,
+                UseTimes = view.UseTimes,
                 // Financials
                 Amount = view.Amount,
                 RemainingAmount = view.RemainingAmount,

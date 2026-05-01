@@ -15,7 +15,7 @@ public static class HomeEndpoints
                     return Results.Json(new
                     {
                         success = true,
-                        message = "Home summary fetched successfully",
+                        message = "Home summary fetched successfully.",
                         data = data,
                         meta = new { statusCode = 200, version = "v1", timestamp = DateTimeOffset.UtcNow.ToString("O") }
                     }, statusCode: 200);

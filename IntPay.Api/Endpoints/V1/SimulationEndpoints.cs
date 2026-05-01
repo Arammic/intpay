@@ -11,14 +11,14 @@ public static class SimulationEndpoints
             {
                 try
                 {
-                    payload = payload ?? throw new ArgumentException("Payload is required");
+                    payload = payload ?? throw new ArgumentException("Request body is required.");
 
                     var result = await service.SimulateTapToPay(payload);
 
                     return Results.Json(new
                     {
                         success = true,
-                        message = "Tap-to-pay simulation completed",
+                        message = "Tap-to-pay simulation completed successfully.",
                         data = result,
                         meta = new { statusCode = 200, version = "v1", timestamp = DateTimeOffset.UtcNow.ToString("O") }
                     }, statusCode: 200);

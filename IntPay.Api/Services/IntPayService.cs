@@ -2,6 +2,7 @@
 using IntPay.Api.supabase.Models;
 using Supabase;
 using Supabase.Postgrest.Interfaces;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using static Supabase.Postgrest.Constants;
@@ -14,6 +15,7 @@ namespace IntPay.Api.Services
         private readonly InvoiceVerificationService _invoiceVerification;
         private readonly IAuditLogWriter _audit;
         private readonly ActiveIntentCommitmentQuery _commitmentQuery;
+        private readonly ResourceAccessService _access;
         private static readonly decimal CREATE_CARD_FEE = 0.05m; //
         private static readonly string[] ECOMMERCE_MCC_PREFIXES = { "4816", "5815", "5816", "5964", "5968", "5969", "7273", "7372" }; //
 
@@ -21,12 +23,14 @@ namespace IntPay.Api.Services
             Supabase.Client client,
             InvoiceVerificationService invoiceVerification,
             IAuditLogWriter audit,
-            ActiveIntentCommitmentQuery commitmentQuery)
+            ActiveIntentCommitmentQuery commitmentQuery,
+            ResourceAccessService access)
         {
             _client = client;
             _invoiceVerification = invoiceVerification;
             _audit = audit;
             _commitmentQuery = commitmentQuery;
+            _access = access;
         }
 
         public async Task<IntentWithCardResponse> CreateIntentWithCard(CreateIntentRequest payload)
@@ -37,6 +41,7 @@ namespace IntPay.Api.Services
             string cardCvv = random.Next(100, 999).ToString();
             string stripeCardId = $"ic_{Guid.NewGuid().ToString("n")[..20]}";
             var expiryDate = payload.ExpiryDate ?? DateTime.UtcNow.AddYears(3);
+            var useTimes = payload.UseTimes.GetValueOrDefault(99999);
 
             // 2. Resolve Receiver Name
             var receiver = await _client.From<Profile>().Where(x => x.Id == payload.UserId).Single();
@@ -48,7 +53,7 @@ namespace IntPay.Api.Services
                 { "p_creator_id", payload.CreatorId },
                 { "p_receiver_id", payload.UserId },
                 { "p_amount", payload.Amount.ToString("0.00") },
-                { "p_use_times", payload.UseTimes },
+                { "p_use_times", useTimes },
                 { "p_expiry_at", payload.ExpiryDate },
                 { "p_country", payload.Country ?? "" },
                 { "p_city", payload.City ?? "" },
@@ -129,15 +134,13 @@ namespace IntPay.Api.Services
             ArgumentNullException.ThrowIfNull(request);
             if (request.IntentId <= 0)
                 throw new ArgumentException("intentId must be positive.", nameof(request.IntentId));
+            if (request.ActingUserId <= 0)
+                throw new ArgumentException("actingUserId must be positive.", nameof(request.ActingUserId));
             if (string.IsNullOrWhiteSpace(request.ImageUrl))
                 throw new ArgumentException("imageUrl is required.", nameof(request.ImageUrl));
 
-            var intent = await _client.From<Intent>()
-                .Where(x => x.Id == request.IntentId)
-                .Single();
-
-            if (intent == null)
-                throw new KeyNotFoundException($"Intent {request.IntentId} not found.");
+            // Only the sender or recipient can trigger invoice verification because it mutates card lock state.
+            var intent = await _access.EnsureCanAccessIntentAsync(request.IntentId, request.ActingUserId);
 
             var card = await _client.From<VirtualCard>()
                 .Where(x => x.IntentId == intent.Id)
@@ -164,21 +167,6 @@ namespace IntPay.Api.Services
             var llm = await _invoiceVerification.VerifyAgainstIntentAsync(intent, request.ImageUrl.Trim(), cancellationToken);
 
             var now = DateTime.UtcNow;
-            var responseBlob = JsonSerializer.Serialize(new
-            {
-                isMatch = llm.IsMatch,
-                reason = llm.Reason,
-                provider = llm.Provider,
-                rawContent = llm.RawContent,
-                invoiceCity = llm.InvoiceCity,
-                invoiceCountry = llm.InvoiceCountry,
-                hasGps = llm.HasGps,
-                gpsLatitude = llm.GpsLatitude,
-                gpsLongitude = llm.GpsLongitude,
-                metadataCity = llm.MetadataCity,
-                metadataCountry = llm.MetadataCountry
-            });
-
             if (!llm.IsMatch)
             {
                 card.IsLockedByPendingInvoice = true;
@@ -191,7 +179,6 @@ namespace IntPay.Api.Services
                     Action = "invoice_verification",
                     Decision = "declined",
                     Reason = llm.Reason,
-                    ResponseData = responseBlob,
                     TransactionAmount = 0,
                     CreatedAt = now,
                     OccurredAt = now
@@ -209,7 +196,6 @@ namespace IntPay.Api.Services
                     Action = "invoice_verification",
                     Decision = "approved",
                     Reason = null,
-                    ResponseData = responseBlob,
                     TransactionAmount = 0,
                     CreatedAt = now,
                     OccurredAt = now
@@ -245,21 +231,21 @@ namespace IntPay.Api.Services
 
             if (card == null)
             {
-                // Create audit log for missing card (card_id unknown -> use 0 or skip card_id)
+                // Create audit log for missing card (no virtual_cards row -> card_id null)
                 var missingCardLog = new AuditLog
                 {
-                    CardId = 0,
+                    CardId = null,
                     TransactionAmount = payload.Amount,
                     MerchantName = payload.MerchantName,
                     Mcc = payload.Mcc,
                     City = payload.City,
                     Decision = "declined",
-                    Reason = "Card not found",
+                Reason = "Transaction declined: card was not found.",
                     CreatedAt = DateTime.UtcNow
                 };
 
                 await _audit.InsertAsync(missingCardLog);
-                return new { approved = false, reason = "Card not found" };
+                return new { approved = false, reason = "Transaction declined: card was not found." };
             }
 
             var intent = await _client.From<Intent>()
@@ -276,12 +262,12 @@ namespace IntPay.Api.Services
                     Mcc = payload.Mcc,
                     City = payload.City,
                     Decision = "declined",
-                    Reason = "Intent not found",
+                    Reason = "Transaction declined: intent was not found.",
                     CreatedAt = DateTime.UtcNow
                 };
 
                 await _audit.InsertAsync(noIntentLog);
-                return new { approved = false, reason = "Intent not found" };
+                return new { approved = false, reason = "Transaction declined: intent was not found." };
             }
 
             // 2. Governance: block spend when invoice is pending or card is manually frozen (before balance/MCC checks).
@@ -338,12 +324,12 @@ namespace IntPay.Api.Services
                     Mcc = payload.Mcc,
                     City = payload.City,
                     Decision = "declined",
-                    Reason = "Card is locked by time",
+                    Reason = "Transaction declined: card is locked until the scheduled unlock time.",
                     CreatedAt = DateTime.UtcNow
                 };
 
                 await _audit.InsertAsync(lockedLog);
-                return new { approved = false, reason = "Card is locked by time" };
+                return new { approved = false, reason = "Transaction declined: card is locked until the scheduled unlock time." };
             }
 
             // 4. Authorization Logic
@@ -353,17 +339,17 @@ namespace IntPay.Api.Services
             if (Money.IsInsufficient(intent.RemainingAmount, payload.Amount))
             {
                 approved = false;
-                reason = "Insufficient Remaining Amount";
+                reason = "Transaction declined: insufficient remaining balance.";
             }
             else if (intent.UsesLeft <= 0)
             {
                 approved = false;
-                reason = "Usage Limit Exceeded";
+                reason = "Transaction declined: usage limit exceeded.";
             }
             else if (!IsMccAllowed(intent.MccCodes, payload.Mcc))
             {
                 approved = false;
-                reason = $"MCC [{payload.Mcc}] not allowed";
+                reason = $"Transaction declined: merchant category code [{payload.Mcc}] is not allowed for this intent.";
             }
 
             // 5. Create audit log (approved or declined)
@@ -399,20 +385,10 @@ namespace IntPay.Api.Services
         }
 
         // 1) Get single card with all logs (paged)
-        public async Task<CardWithLogsResponse> GetCardWithLogsByCardId(int cardId, int? profileId = null, int limit = 100, int offset = 0)
+        public async Task<CardWithLogsResponse> GetCardWithLogsByCardId(int cardId, int profileId, int limit = 100, int offset = 0)
         {
-            // 1. fetch rich view row
-            var cardResp = await _client.From<RichIntentCardView>()
-                .Where(x => x.CardId == cardId)
-                .Single();
-
-            if (cardResp == null) throw new KeyNotFoundException("Card not found");
-
-            var row = cardResp;
-
-            // optional access check
-            if (profileId.HasValue && row.CreatorId != profileId.Value && row.ReceiverId != profileId.Value)
-                throw new UnauthorizedAccessException("User does not have access to this card");
+            // Sender/recipient privacy boundary: card details and logs are visible only to card participants.
+            var row = await _access.EnsureCanAccessCardAsync(cardId, profileId);
 
             // 2. fetch audit logs (paged, newest first)
             var logsResp = await _client.From<AuditLog>()
@@ -460,7 +436,7 @@ namespace IntPay.Api.Services
                 IsManuallyFrozen = row.IsManuallyFrozen,
             };
 
-            var rich = intent.ToRichResponse(currentUserId: profileId ?? row.CreatorId, card: card, senderName: row.SenderName);
+            var rich = intent.ToRichResponse(currentUserId: profileId, card: card, senderName: row.SenderName);
 
             return new CardWithLogsResponse { Card = rich, Logs = logs };
         }
@@ -593,15 +569,8 @@ namespace IntPay.Api.Services
         /// <summary>Sets manual freeze only; does not change invoice-pending lock. Creator or receiver only; writes governance audit.</summary>
         public async Task<object> SetCardManualFreezeStateAsync(int cardId, bool frozen, int actingUserId)
         {
-            var row = await _client.From<RichIntentCardView>()
-                .Where(x => x.CardId == cardId)
-                .Single();
-
-            if (row == null)
-                throw new KeyNotFoundException("Card not found");
-
-            if (row.CreatorId != actingUserId && row.ReceiverId != actingUserId)
-                throw new UnauthorizedAccessException("User does not have access to this card");
+            // Only the sender or recipient can manually freeze/unfreeze a card.
+            var row = await _access.EnsureCanAccessCardAsync(cardId, actingUserId);
 
             var card = await _client.From<VirtualCard>().Where(x => x.Id == cardId).Single();
             if (card == null)
@@ -612,13 +581,6 @@ namespace IntPay.Api.Services
             await _client.From<VirtualCard>().Update(card);
 
             var now = DateTime.UtcNow;
-            var responseData = JsonSerializer.Serialize(new
-            {
-                previousManualFreeze = previous,
-                isManuallyFrozen = card.IsManuallyFrozen,
-                isLockedByPendingInvoice = card.IsLockedByPendingInvoice,
-                actingUserId
-            });
             await _audit.InsertAsync(new AuditLog
             {
                 CardId = card.Id,
@@ -626,7 +588,6 @@ namespace IntPay.Api.Services
                 Action = "card_manual_freeze_set",
                 Decision = "info",
                 Reason = $"Manual freeze {(frozen ? "enabled" : "disabled")} by user {actingUserId}",
-                ResponseData = responseData,
                 TransactionAmount = 0,
                 CreatedAt = now,
                 OccurredAt = now
@@ -686,12 +647,7 @@ namespace IntPay.Api.Services
 
         public async Task<object> GetIntentDetailAsync(int intentId, int actingUserId)
         {
-            var intent = await _client.From<Intent>().Where(x => x.Id == intentId).Single();
-            if (intent == null)
-                throw new KeyNotFoundException($"Intent {intentId} not found");
-
-            if (intent.CreatorId != actingUserId && intent.ReceiverId != actingUserId)
-                throw new UnauthorizedAccessException("User does not have access to this intent");
+            var intent = await _access.EnsureCanAccessIntentAsync(intentId, actingUserId);
 
             var card = await _client.From<VirtualCard>().Where(x => x.IntentId == intentId).Single();
             if (card == null)
@@ -706,19 +662,14 @@ namespace IntPay.Api.Services
             }
 
             var rich = intent.ToRichResponse(currentUserId: currentUser, card: card, senderName: senderName);
-            return new { intentId = intent.Id, intent, card, rich };
+            return new { intentId = intent.Id, intent, card = rich.Card, rich };
         }
 
         public async Task<object> PatchIntentAsync(int intentId, PatchIntentRequest patch, int actingUserId)
         {
             ArgumentNullException.ThrowIfNull(patch);
 
-            var intent = await _client.From<Intent>().Where(x => x.Id == intentId).Single();
-            if (intent == null)
-                throw new KeyNotFoundException($"Intent {intentId} not found");
-
-            if (intent.CreatorId != actingUserId && intent.ReceiverId != actingUserId)
-                throw new UnauthorizedAccessException("User does not have access to this intent");
+            var intent = await _access.EnsureCanAccessIntentAsync(intentId, actingUserId);
 
             var hasPatch = patch.Description != null || patch.City != null || patch.Country != null
                 || patch.Category != null || patch.MccList != null || patch.RequiredInvoiceProve.HasValue;
@@ -726,16 +677,6 @@ namespace IntPay.Api.Services
                 return await GetIntentDetailAsync(intentId, actingUserId);
 
             intent.MccCodes ??= new List<string>();
-
-            var before = JsonSerializer.Serialize(new
-            {
-                intent.Description,
-                intent.City,
-                intent.Country,
-                intent.Category,
-                intent.MccCodes,
-                intent.RequiredInvoiceProve
-            });
 
             if (patch.Description != null)
                 intent.Description = patch.Description;
@@ -752,32 +693,127 @@ namespace IntPay.Api.Services
 
             await _client.From<Intent>().Update(intent);
 
-            var after = JsonSerializer.Serialize(new
-            {
-                intent.Description,
-                intent.City,
-                intent.Country,
-                intent.Category,
-                intent.MccCodes,
-                intent.RequiredInvoiceProve
-            });
-
-            var card = await _client.From<VirtualCard>().Where(x => x.IntentId == intentId).Single();
+            var card = await _client.From<VirtualCard>().Where(x => x.IntentId == intentId).Single()
+                ?? throw new KeyNotFoundException("Virtual card not found for intent.");
             var now = DateTime.UtcNow;
             await _audit.InsertAsync(new AuditLog
             {
-                CardId = card?.Id ?? 0,
+                CardId = card.Id,
                 EntityId = intentId,
                 Action = "intent_updated",
                 Decision = "info",
                 Reason = "Intent metadata updated",
-                ResponseData = JsonSerializer.Serialize(new { before, after, actingUserId }),
                 TransactionAmount = 0,
                 CreatedAt = now,
                 OccurredAt = now
             });
 
             return await GetIntentDetailAsync(intentId, actingUserId);
+        }
+
+        public async Task<UserLatestActivitiesResponse> GetLatestActivitiesForUserAsync(int userId, UserLatestActivitiesQuery query)
+        {
+            var limit = Math.Clamp(query.Limit, 1, 1000);
+            var offset = Math.Max(0, query.Offset);
+            var role = NormalizeActivityRole(query.Role);
+            Console.WriteLine($"[Activities] userId={userId}, role={role}, limit={limit}, offset={offset}, decision={query.Decision ?? "all"}, action={query.Action ?? "all"}");
+
+            var filters = new List<IPostgrestQueryFilter>
+            {
+                new Supabase.Postgrest.QueryFilter("creator_id", Operator.Equals, userId),
+                new Supabase.Postgrest.QueryFilter("receiver_id", Operator.Equals, userId)
+            };
+
+            var cardsResp = await _client.From<RichIntentCardView>().Or(filters).Get();
+            var visibleCards = (cardsResp.Models ?? new List<RichIntentCardView>())
+                .Where(c => ActivityRoleMatches(c, userId, role))
+                .Where(c => !query.CardId.HasValue || c.CardId == query.CardId.Value)
+                .Where(c => !query.IntentId.HasValue || c.IntentId == query.IntentId.Value)
+                .GroupBy(c => c.CardId)
+                .Select(g => g.First())
+                .ToList();
+            Console.WriteLine($"[Activities] userId={userId}, visibleCards={visibleCards.Count}");
+
+            if (visibleCards.Count == 0)
+            {
+                Console.WriteLine($"[Activities] userId={userId}, no visible cards for role={role}");
+                return new UserLatestActivitiesResponse
+                {
+                    UserId = userId,
+                    Limit = limit,
+                    Offset = offset,
+                    Filters = BuildActivityFiltersEcho(query, role)
+                };
+            }
+
+            var visibleByCardId = visibleCards.ToDictionary(c => c.CardId);
+            var logFilters = visibleCards
+                .Select<RichIntentCardView, IPostgrestQueryFilter>(c => new Supabase.Postgrest.QueryFilter("card_id", Operator.Equals, c.CardId))
+                .ToList();
+
+            var logsQuery = _client.From<AuditLog>().Or(logFilters);
+            if (!string.IsNullOrWhiteSpace(query.Decision))
+                logsQuery = logsQuery.Filter("decision", Operator.Equals, query.Decision.Trim());
+            if (!string.IsNullOrWhiteSpace(query.Action))
+                logsQuery = logsQuery.Filter("action", Operator.Equals, query.Action.Trim());
+            if (!string.IsNullOrWhiteSpace(query.Mcc))
+                logsQuery = logsQuery.Filter("mcc", Operator.Equals, query.Mcc.Trim());
+            if (query.FromUtc.HasValue)
+                logsQuery = logsQuery.Filter("created_at", Operator.GreaterThanOrEqual, query.FromUtc.Value.ToUniversalTime().ToString("O"));
+            if (query.ToUtc.HasValue)
+                logsQuery = logsQuery.Filter("created_at", Operator.LessThanOrEqual, query.ToUtc.Value.ToUniversalTime().ToString("O"));
+            if (query.MinAmount.HasValue)
+                logsQuery = logsQuery.Filter("transaction_amount", Operator.GreaterThanOrEqual, query.MinAmount.Value.ToString(CultureInfo.InvariantCulture));
+            if (query.MaxAmount.HasValue)
+                logsQuery = logsQuery.Filter("transaction_amount", Operator.LessThanOrEqual, query.MaxAmount.Value.ToString(CultureInfo.InvariantCulture));
+            if (!query.IncludeInfo)
+                logsQuery = logsQuery.Filter("decision", Operator.NotEqual, "info");
+
+            var logsResp = await logsQuery.Get();
+            var filteredLogs = (logsResp.Models ?? new List<AuditLog>())
+                .Where(l => l.CardId.HasValue && visibleByCardId.ContainsKey(l.CardId.Value))
+                .Where(l => !query.IntentId.HasValue || (l.EntityId ?? visibleByCardId[l.CardId!.Value].IntentId) == query.IntentId.Value)
+                .Where(l => string.IsNullOrWhiteSpace(query.Merchant) || (l.MerchantName?.Contains(query.Merchant.Trim(), StringComparison.OrdinalIgnoreCase) ?? false))
+                .Where(l => string.IsNullOrWhiteSpace(query.City) || (l.City?.Contains(query.City.Trim(), StringComparison.OrdinalIgnoreCase) ?? false))
+                .OrderByDescending(l => l.CreatedAt)
+                .ToList();
+
+            var total = filteredLogs.Count;
+            var page = filteredLogs
+                .Skip(offset)
+                .Take(limit)
+                .Select(l => BuildActivityItem(userId, l, visibleByCardId[l.CardId!.Value]))
+                .ToList();
+            Console.WriteLine($"[Activities] userId={userId}, filteredLogs={total}, returned={page.Count}");
+
+            return new UserLatestActivitiesResponse
+            {
+                UserId = userId,
+                Total = total,
+                Limit = limit,
+                Offset = offset,
+                Filters = BuildActivityFiltersEcho(query, role),
+                Summary = new UserLatestActivitiesSummary
+                {
+                    ApprovedCount = filteredLogs.Count(l => string.Equals(l.Decision, "approved", StringComparison.OrdinalIgnoreCase)),
+                    DeclinedCount = filteredLogs.Count(l => string.Equals(l.Decision, "declined", StringComparison.OrdinalIgnoreCase)),
+                    InfoCount = filteredLogs.Count(l => string.Equals(l.Decision, "info", StringComparison.OrdinalIgnoreCase)),
+                    ApprovedSpendTotal = filteredLogs
+                        .Where(l => string.Equals(l.Decision, "approved", StringComparison.OrdinalIgnoreCase))
+                        .Sum(l => l.TransactionAmount),
+                    DeclinedAmountTotal = filteredLogs
+                        .Where(l => string.Equals(l.Decision, "declined", StringComparison.OrdinalIgnoreCase))
+                        .Sum(l => l.TransactionAmount),
+                    DistinctCards = filteredLogs.Where(l => l.CardId.HasValue).Select(l => l.CardId!.Value).Distinct().Count(),
+                    DistinctIntents = filteredLogs
+                        .Select(l => l.EntityId ?? (l.CardId.HasValue ? visibleByCardId[l.CardId.Value].IntentId : (int?)null))
+                        .Where(id => id.HasValue)
+                        .Select(id => id!.Value)
+                        .Distinct()
+                        .Count()
+                },
+                Items = page
+            };
         }
 
         public async Task<UserTransactionsResponse> GetUserTransactionsAsync(int userId, int limit = 50, int offset = 0)
@@ -833,6 +869,132 @@ namespace IntPay.Api.Services
                 Offset = offset,
                 Logs = logs
             };
+        }
+
+        private static UserLatestActivitiesAppliedFilters BuildActivityFiltersEcho(UserLatestActivitiesQuery query, string role) => new()
+        {
+            Decision = string.IsNullOrWhiteSpace(query.Decision) ? null : query.Decision.Trim(),
+            Action = string.IsNullOrWhiteSpace(query.Action) ? null : query.Action.Trim(),
+            CardId = query.CardId,
+            IntentId = query.IntentId,
+            FromUtc = query.FromUtc,
+            ToUtc = query.ToUtc,
+            Merchant = string.IsNullOrWhiteSpace(query.Merchant) ? null : query.Merchant.Trim(),
+            Mcc = string.IsNullOrWhiteSpace(query.Mcc) ? null : query.Mcc.Trim(),
+            City = string.IsNullOrWhiteSpace(query.City) ? null : query.City.Trim(),
+            MinAmount = query.MinAmount,
+            MaxAmount = query.MaxAmount,
+            Role = role,
+            IncludeInfo = query.IncludeInfo
+        };
+
+        private static string NormalizeActivityRole(string? role)
+        {
+            var value = role?.Trim().ToLowerInvariant();
+            return value is "sender" or "receiver" or "self" ? value : "all";
+        }
+
+        private static bool ActivityRoleMatches(RichIntentCardView card, int userId, string role) => role switch
+        {
+            "sender" => card.CreatorId == userId && card.ReceiverId != userId,
+            "receiver" => card.ReceiverId == userId && card.CreatorId != userId,
+            "self" => card.CreatorId == userId && card.ReceiverId == userId,
+            _ => card.CreatorId == userId || card.ReceiverId == userId
+        };
+
+        private static string ResolveActivityRole(RichIntentCardView card, int userId)
+        {
+            if (card.CreatorId == userId && card.ReceiverId == userId) return "self";
+            if (card.CreatorId == userId) return "sender";
+            if (card.ReceiverId == userId) return "receiver";
+            return "participant";
+        }
+
+        private static UserActivityItem BuildActivityItem(int userId, AuditLog log, RichIntentCardView card)
+        {
+            var activityType = !string.IsNullOrWhiteSpace(log.Action) ? log.Action! : log.Decision;
+            var title = BuildActivityTitle(log);
+            var subtitle = BuildActivitySubtitle(log, card);
+
+            return new UserActivityItem
+            {
+                Id = log.Id,
+                CardId = log.CardId,
+                IntentId = log.EntityId ?? card.IntentId,
+                Action = log.Action,
+                Decision = log.Decision,
+                Reason = log.Reason,
+                TransactionAmount = log.TransactionAmount,
+                MerchantName = log.MerchantName,
+                Mcc = log.Mcc,
+                City = log.City,
+                CreatedAt = log.CreatedAt,
+                OccurredAt = log.OccurredAt,
+                CreatorId = card.CreatorId,
+                ReceiverId = card.ReceiverId,
+                Role = ResolveActivityRole(card, userId),
+                IntentDescription = card.Description,
+                Category = null,
+                Country = card.Country,
+                IntentAmount = card.Amount,
+                RemainingAmount = card.RemainingAmount,
+                CardLast4 = card.Last4,
+                CardStatus = card.Status,
+                IsLockedByPendingInvoice = card.IsLockedByPendingInvoice,
+                IsManuallyFrozen = card.IsManuallyFrozen,
+                IsSpendBlocked = card.IsLockedByPendingInvoice || card.IsManuallyFrozen,
+                SenderName = card.SenderName,
+                ActivityType = activityType,
+                Title = title,
+                Subtitle = subtitle,
+                Severity = BuildActivitySeverity(log, card),
+                AmountLabel = log.TransactionAmount.ToString("$0.00", CultureInfo.InvariantCulture)
+            };
+        }
+
+        private static string BuildActivityTitle(AuditLog log)
+        {
+            if (!string.IsNullOrWhiteSpace(log.MerchantName))
+            {
+                return string.Equals(log.Decision, "approved", StringComparison.OrdinalIgnoreCase)
+                    ? $"Approved at {log.MerchantName}"
+                    : string.Equals(log.Decision, "declined", StringComparison.OrdinalIgnoreCase)
+                        ? $"Declined at {log.MerchantName}"
+                        : log.MerchantName!;
+            }
+
+            return log.Action switch
+            {
+                "invoice_verification" => "Invoice verification",
+                "card_manual_freeze_set" => "Manual freeze updated",
+                "budget_intent_created" => "Budget intent created",
+                "virtual_card_issued" => "Virtual card issued",
+                "jit_funding_authorization" => "JIT funding authorization",
+                "intent_updated" => "Intent updated",
+                _ => string.Equals(log.Decision, "info", StringComparison.OrdinalIgnoreCase) ? "Activity update" : "Card activity"
+            };
+        }
+
+        private static string BuildActivitySubtitle(AuditLog log, RichIntentCardView card)
+        {
+            var location = string.IsNullOrWhiteSpace(log.City) ? card.City : log.City;
+            var parts = new[]
+            {
+                card.Description,
+                string.IsNullOrWhiteSpace(location) ? null : location,
+                string.IsNullOrWhiteSpace(log.Mcc) ? null : $"MCC {log.Mcc}",
+                string.IsNullOrWhiteSpace(log.Reason) ? null : log.Reason
+            };
+
+            return string.Join(" · ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
+        }
+
+        private static string BuildActivitySeverity(AuditLog log, RichIntentCardView card)
+        {
+            if (string.Equals(log.Decision, "declined", StringComparison.OrdinalIgnoreCase)) return "danger";
+            if (string.Equals(log.Decision, "approved", StringComparison.OrdinalIgnoreCase)) return "success";
+            if (card.IsLockedByPendingInvoice || card.IsManuallyFrozen) return "warning";
+            return "neutral";
         }
 
         private bool IsMccAllowed(List<string>? allowedCodes, string incomingMcc)

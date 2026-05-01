@@ -22,7 +22,7 @@ Apply migration [`supabase/migrations/20260502120000_lock_split_manual_freeze.sq
 ```
 
 - **Response `data`:** `{ cardId, isManuallyFrozen, isLockedByPendingInvoice, isSpendBlocked, previousManualFreeze }`.
-- **Audit:** Yes — `action` = `card_manual_freeze_set`, `decision` = `info`, `transaction_amount` = `0`, `entity_id` = intent id, `card_id` = card id, `response_data` = JSON snapshot.
+- **Audit:** Yes — `action` = `card_manual_freeze_set`, `decision` = `info`, `transaction_amount` = `0`, `entity_id` = intent id, `card_id` = card id, `reason` describes the freeze change.
 
 ## GET `/users/{userId}/dashboard/metrics`
 
@@ -44,7 +44,7 @@ Apply migration [`supabase/migrations/20260502120000_lock_split_manual_freeze.sq
 - **Purpose:** Update whitelisted metadata only (`description`, `city`, `country`, `category`, `mccList`, `requiredInvoiceProve`). Does not change amounts, uses, or status.
 - **Tables:** `intents` (update), `virtual_cards` (read for `card_id`), `audit_logs` (insert on actual changes).
 - **Body (JSON):** any subset of `PatchIntentRequest` fields; if no fields are sent, returns current detail without DB update or audit.
-- **Audit:** On successful patch — `action` = `intent_updated`, `decision` = `info`, `transaction_amount` = `0`, `entity_id` = intent id, `response_data` = `{ before, after, actingUserId }` (JSON strings).
+- **Audit:** On successful patch — `action` = `intent_updated`, `decision` = `info`, `transaction_amount` = `0`, `entity_id` = intent id, `reason` = `Intent metadata updated`.
 
 ## GET `/cards/{cardId}/logs`
 
@@ -66,7 +66,7 @@ Apply migration [`supabase/migrations/20260502120000_lock_split_manual_freeze.sq
 
 - **Purpose:** Unchanged route; now also writes governance audit when vault is credited.
 - **Tables:** `profiles`, `audit_logs`.
-- **Audit:** `action` = `wallet_credit`, `decision` = `info`, `entity_id` = profile id, `card_id` = `0`, `transaction_amount` = `0`, `response_data` includes `profileId`, `amount`, `vaultBalance`.
+- **Audit:** `action` = `wallet_credit`, `decision` = `info`, `entity_id` = profile id, `card_id` = `NULL` (no card row), `transaction_amount` = `0`, `reason` describes the credited amount.
 
 ---
 
